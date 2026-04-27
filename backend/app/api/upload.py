@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -9,7 +10,7 @@ from app.models.schemas import TransactionOut, UploadResponse
 from app.services.parsers.btg_adapter import BTGParserAdapter
 
 router = APIRouter(tags=["importer"])
-UPLOAD_DIR = Path("/data/uploads")
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./data/uploads"))
 parser = BTGParserAdapter()
 
 

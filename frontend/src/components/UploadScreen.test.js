@@ -52,7 +52,8 @@ describe('UploadScreen', () => {
 
     const input = wrapper.find('input[type="file"]')
     const file = new File(['%PDF-1.4'], 'nota.pdf', { type: 'application/pdf' })
-    await input.trigger('change', { target: { files: [file] } })
+    Object.defineProperty(input.element, 'files', { value: [file] })
+    await input.trigger('change')
 
     await wrapper.find('form').trigger('submit.prevent')
     await flushPromises()
