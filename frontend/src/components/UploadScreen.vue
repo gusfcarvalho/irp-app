@@ -27,17 +27,21 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-if="transactions.length === 0">
-          <td colspan="6">No transactions found.</td>
-        </tr>
-        <tr v-for="tx in transactions" v-else :key="tx.id">
-          <td>{{ tx.trade_date }}</td>
-          <td>{{ tx.ticker }}</td>
-          <td>{{ tx.side }}</td>
-          <td>{{ tx.quantity }}</td>
-          <td>{{ tx.price }}</td>
-          <td>{{ tx.upload_id }}</td>
-        </tr>
+        <template v-if="transactions.length === 0">
+          <tr>
+            <td colspan="6">No transactions found.</td>
+          </tr>
+        </template>
+        <template v-else>
+          <tr v-for="tx in transactions" :key="tx.id">
+            <td>{{ tx.trade_date }}</td>
+            <td>{{ tx.ticker }}</td>
+            <td>{{ tx.side }}</td>
+            <td>{{ tx.quantity }}</td>
+            <td>{{ tx.price }}</td>
+            <td>{{ tx.upload_id }}</td>
+          </tr>
+        </template>
       </tbody>
     </table>
   </section>
