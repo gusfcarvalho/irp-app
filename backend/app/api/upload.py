@@ -51,6 +51,7 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
             )
 
         session.commit()
+        session.refresh(upload)
 
     return UploadResponse(
         id=upload.id,

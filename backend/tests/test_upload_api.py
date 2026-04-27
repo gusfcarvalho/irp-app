@@ -18,7 +18,8 @@ def _build_test_client(tmp_path, monkeypatch):
     importlib.reload(upload_module)
     importlib.reload(main_module)
 
-    client = TestClient(main_module.app)
+    client = TestClient(main_module.app, raise_server_exceptions=True)
+    client.__enter__()
     return client, upload_module
 
 

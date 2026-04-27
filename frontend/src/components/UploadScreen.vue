@@ -7,15 +7,24 @@
         accept="application/pdf,.pdf"
         @change="onSelectFile"
       >
-      <button type="submit" :disabled="loading || !file">
+      <button
+        type="submit"
+        :disabled="loading || !file"
+      >
         {{ loading ? 'Uploading...' : 'Upload SINACOR PDF' }}
       </button>
     </form>
 
-    <p v-if="message">{{ message }}</p>
+    <p v-if="message">
+      {{ message }}
+    </p>
 
     <h3>Imported Transactions</h3>
-    <table border="1" cellpadding="6" style="border-collapse: collapse; width: 100%">
+    <table
+      border="1"
+      cellpadding="6"
+      style="border-collapse: collapse; width: 100%"
+    >
       <thead>
         <tr>
           <th>Date</th>
@@ -29,11 +38,16 @@
       <tbody>
         <template v-if="transactions.length === 0">
           <tr>
-            <td colspan="6">No transactions found.</td>
+            <td colspan="6">
+              No transactions found.
+            </td>
           </tr>
         </template>
         <template v-else>
-          <tr v-for="tx in transactions" :key="tx.id">
+          <tr
+            v-for="tx in transactions"
+            :key="tx.id"
+          >
             <td>{{ tx.trade_date }}</td>
             <td>{{ tx.ticker }}</td>
             <td>{{ tx.side }}</td>

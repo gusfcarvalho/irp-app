@@ -35,7 +35,7 @@ type-check:
 test: test-backend test-frontend
 
 test-backend:
-	cd backend && pytest -q
+	cd backend && ../.venv/bin/pytest -q
 
 test-frontend:
 	cd frontend && npm run test:unit
