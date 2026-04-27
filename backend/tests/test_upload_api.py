@@ -1,31 +1,33 @@
-from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, create_engine
+import importlib
 
-from app.main import app
-from app.models.schemas import Trade
+from fastapi.testclient import TestClient
 
 
 def _build_test_client(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
-    test_engine = create_engine(f"sqlite:///{db_path}")
+    uploads_path = tmp_path / "uploads"
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("UPLOAD_DIR", str(uploads_path))
 
     import app.db as db_module
     import app.api.upload as upload_module
+    import app.main as main_module
 
-    monkeypatch.setattr(db_module, "engine", test_engine)
-    monkeypatch.setattr(upload_module, "engine", test_engine)
-    monkeypatch.setattr(upload_module, "UPLOAD_DIR", tmp_path / "uploads")
+    importlib.reload(db_module)
+    importlib.reload(upload_module)
+    importlib.reload(main_module)
 
-    SQLModel.metadata.create_all(test_engine)
-
-    client = TestClient(app)
-    return client
+    client = TestClient(main_module.app)
+    return client, upload_module
 
 
 def test_upload_pdf_persists_and_returns_transactions_count(tmp_path, monkeypatch):
-    client = _build_test_client(tmp_path, monkeypatch)
+    client, upload_module = _build_test_client(tmp_path, monkeypatch)
 
     def fake_parse(_path: str):
+        from app.models.schemas import Trade
+
         return [
             Trade(
                 ticker="PETR4",
@@ -35,8 +37,6 @@ def test_upload_pdf_persists_and_returns_transactions_count(tmp_path, monkeypatc
                 side="BUY",
             )
         ]
-
-    import app.api.upload as upload_module
 
     monkeypatch.setattr(upload_module.parser, "parse", fake_parse)
 
@@ -55,9 +55,11 @@ def test_upload_pdf_persists_and_returns_transactions_count(tmp_path, monkeypatc
 
 
 def test_list_transactions_returns_imported_rows(tmp_path, monkeypatch):
-    client = _build_test_client(tmp_path, monkeypatch)
+    client, upload_module = _build_test_client(tmp_path, monkeypatch)
 
     def fake_parse(_path: str):
+        from app.models.schemas import Trade
+
         return [
             Trade(
                 ticker="VALE3",
@@ -67,8 +69,6 @@ def test_list_transactions_returns_imported_rows(tmp_path, monkeypatch):
                 side="SELL",
             )
         ]
-
-    import app.api.upload as upload_module
 
     monkeypatch.setattr(upload_module.parser, "parse", fake_parse)
 
