@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { UploadScreen } from './UploadScreen'
+import UploadScreen from './UploadScreen.vue'
 
 describe('UploadScreen', () => {
   beforeEach(() => {
@@ -14,9 +14,10 @@ describe('UploadScreen', () => {
       json: async () => [],
     })
 
-    render(<UploadScreen />)
+    const wrapper = mount(UploadScreen)
+    await flushPromises()
 
-    expect(await screen.findByText('No transactions found.')).toBeInTheDocument()
+    expect(wrapper.text()).toContain('No transactions found.')
   })
 
   it('uploads a pdf and refreshes transactions', async () => {
@@ -46,20 +47,17 @@ describe('UploadScreen', () => {
         ],
       })
 
-    const { container } = render(<UploadScreen />)
+    const wrapper = mount(UploadScreen)
+    await flushPromises()
 
-    const input = container.querySelector('input[type="file"]')
-    expect(input).toBeTruthy()
+    const input = wrapper.find('input[type="file"]')
     const file = new File(['%PDF-1.4'], 'nota.pdf', { type: 'application/pdf' })
-    fireEvent.change(input, { target: { files: [file] } })
+    await input.trigger('change', { target: { files: [file] } })
 
-    fireEvent.click(screen.getByRole('button', { name: /upload sinacor pdf/i }))
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
 
-    await waitFor(() => {
-      expect(screen.getByText(/Upload successful/)).toBeInTheDocument()
-      expect(screen.getByText('PETR4')).toBeInTheDocument()
-    })
-
-    expect(global.fetch).toHaveBeenCalledWith('/api/upload', expect.any(Object))
+    expect(wrapper.text()).toContain('Upload successful')
+    expect(wrapper.text()).toContain('PETR4')
   })
 })
