@@ -31,3 +31,20 @@ class MonthlyReport(BaseModel):
     day_trade_profit_loss: Decimal
     fii_profit_loss: Decimal
     tax_due: Decimal
+
+
+class UploadResponse(BaseModel):
+    id: str
+    filename: str
+    transactions_created: int
+
+
+class TransactionOut(BaseModel):
+    id: str
+    upload_id: str
+    ticker: str
+    trade_date: date
+    side: str
+    quantity: int
+    price: Decimal
+    market_type: str
