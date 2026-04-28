@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -10,7 +10,7 @@ class Upload(SQLModel, table=True):
     filename: str
     broker: str = "BTG"
     stored_path: str
-    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    uploaded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class Transaction(SQLModel, table=True):
