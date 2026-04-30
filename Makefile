@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help setup setup-backend setup-frontend lint lint-backend lint-frontend type-check test test-backend test-frontend ci clean
+.PHONY: help setup setup-backend setup-frontend lint lint-backend lint-frontend type-check test test-backend test-frontend ci run stop clean
 
 help:
 	@echo "Available targets:"
@@ -11,6 +11,8 @@ help:
 	@echo "  type-check      Run frontend type-check"
 	@echo "  test            Run backend + frontend tests"
 	@echo "  ci              Run local CI-equivalent checks"
+	@echo "  run             Build and start all services via docker compose"
+	@echo "  stop            Stop and remove docker compose containers"
 
 setup: setup-backend setup-frontend
 
@@ -41,6 +43,12 @@ test-frontend:
 	cd frontend && npm run test:unit
 
 ci: setup lint type-check test
+
+run:
+	docker compose up --build
+
+stop:
+	docker compose down
 
 clean:
 	rm -f backend/app.db

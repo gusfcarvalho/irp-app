@@ -28,16 +28,20 @@ def test_upload_pdf_persists_and_returns_transactions_count(tmp_path, monkeypatc
 
     def fake_parse(_path: str):
         from app.models.schemas import Trade
+        from app.services.parsers.btg_adapter import ParseResult
 
-        return [
-            Trade(
-                ticker="PETR4",
-                trade_date="2026-04-01",
-                quantity=100,
-                price="30.15",
-                side="BUY",
-            )
-        ]
+        return ParseResult(
+            note_number="99001",
+            trades=[
+                Trade(
+                    ticker="PETR4",
+                    trade_date="2026-04-01",
+                    quantity=100,
+                    price="30.15",
+                    side="BUY",
+                )
+            ],
+        )
 
     monkeypatch.setattr(upload_module.parser, "parse", fake_parse)
 
@@ -60,16 +64,20 @@ def test_list_transactions_returns_imported_rows(tmp_path, monkeypatch):
 
     def fake_parse(_path: str):
         from app.models.schemas import Trade
+        from app.services.parsers.btg_adapter import ParseResult
 
-        return [
-            Trade(
-                ticker="VALE3",
-                trade_date="2026-04-02",
-                quantity=50,
-                price="55.99",
-                side="SELL",
-            )
-        ]
+        return ParseResult(
+            note_number="99002",
+            trades=[
+                Trade(
+                    ticker="VALE3",
+                    trade_date="2026-04-02",
+                    quantity=50,
+                    price="55.99",
+                    side="SELL",
+                )
+            ],
+        )
 
     monkeypatch.setattr(upload_module.parser, "parse", fake_parse)
 

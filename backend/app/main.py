@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.manual_transactions import router as manual_transactions_router
+from app.api.positions import router as positions_router
 from app.api.upload import router as upload_router
 from app.db import init_db
 
@@ -14,6 +16,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="IRPF SINACOR API", version="0.2.0", lifespan=lifespan)
 app.include_router(upload_router, prefix="/api")
+app.include_router(positions_router, prefix="/api")
+app.include_router(manual_transactions_router, prefix="/api")
 
 
 @app.get("/health")

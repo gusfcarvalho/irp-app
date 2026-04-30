@@ -7,6 +7,12 @@ services:
     volumes:
       - ./backend:/app
       - ./data/uploads:/data/uploads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
   frontend:
     build: ./frontend
     ports:
@@ -14,4 +20,5 @@ services:
     volumes:
       - ./frontend:/app
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy

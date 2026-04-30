@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -6,9 +7,10 @@ from sqlmodel import Session, select
 
 from app.db import engine
 from app.models.db_models import Transaction, Upload
-from app.models.schemas import TransactionOut, UploadResponse
+from app.models.schemas import TransactionOut, UploadOut, UploadResponse
 from app.services.parsers.btg_adapter import BTGParserAdapter
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["importer"])
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./data/uploads"))
 parser = BTGParserAdapter()
@@ -29,15 +31,43 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
     upload.stored_path = str(target)
 
     try:
-        parsed_trades = parser.parse(str(target))
+        result = parser.parse(str(target))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {exc}") from exc
 
     with Session(engine) as session:
+        if result.note_number is not None:
+            existing = session.exec(
+                select(Upload).where(Upload.note_number == result.note_number)
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Nota {result.note_number} already imported (upload id: {existing.id})",
+                )
+
+        upload.note_number = result.note_number
+        upload.settlement_fee = result.settlement_fee
+        upload.registration_fee = result.registration_fee
+        upload.term_fee = result.term_fee
+        upload.ana_fee = result.ana_fee
+        upload.emoluments = result.emoluments
+        upload.operational_fee = result.operational_fee
+        upload.execution = result.execution
+        upload.custody_fee = result.custody_fee
+        upload.taxes = result.taxes
+        upload.irrf = result.irrf
+        upload.other_fees = result.other_fees
+        upload.depositary_fee = result.depositary_fee
         session.add(upload)
         session.flush()
 
-        for trade in parsed_trades:
+        for trade in result.trades:
+            if trade.quantity == 0:
+                logger.warning(
+                    "PDF %s (nota %s): parsed trade with quantity=0 — ticker=%s date=%s side=%s price=%s",
+                    file.filename, result.note_number, trade.ticker, trade.trade_date, trade.side, trade.price,
+                )
             session.add(
                 Transaction(
                     upload_id=upload.id,
@@ -56,8 +86,53 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
     return UploadResponse(
         id=upload.id,
         filename=upload.filename,
-        transactions_created=len(parsed_trades),
+        transactions_created=len(result.trades),
     )
+
+
+@router.get("/uploads", response_model=list[UploadOut])
+def list_uploads() -> list[UploadOut]:
+    with Session(engine) as session:
+        uploads = session.exec(select(Upload).order_by(Upload.uploaded_at.desc())).all()
+        txns_by_upload: dict[str, list[Transaction]] = {}
+        for tx in session.exec(select(Transaction)).all():
+            txns_by_upload.setdefault(tx.upload_id, []).append(tx)
+
+    return [
+        UploadOut(
+            id=u.id,
+            filename=u.filename,
+            broker=u.broker,
+            note_number=u.note_number,
+            uploaded_at=u.uploaded_at.isoformat(),
+            settlement_fee=u.settlement_fee,
+            registration_fee=u.registration_fee,
+            term_fee=u.term_fee,
+            ana_fee=u.ana_fee,
+            emoluments=u.emoluments,
+            operational_fee=u.operational_fee,
+            execution=u.execution,
+            custody_fee=u.custody_fee,
+            taxes=u.taxes,
+            irrf=u.irrf,
+            other_fees=u.other_fees,
+            depositary_fee=u.depositary_fee,
+            transactions=[
+                TransactionOut(
+                    id=t.id,
+                    upload_id=t.upload_id,
+                    ticker=t.ticker,
+                    trade_date=t.trade_date,
+                    side=t.side,
+                    quantity=t.quantity,
+                    price=t.price,
+                    market_type=t.market_type,
+                )
+                for t in txns_by_upload.get(u.id, [])
+            ],
+        )
+        for u in uploads
+    ]
 
 
 @router.get("/transactions", response_model=list[TransactionOut])
