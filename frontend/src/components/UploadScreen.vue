@@ -221,6 +221,8 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { formatCurrency, formatDate } from '@/utils/format.js'
+import { getTransactions } from '@/services/api.js'
 import {
   AlertTriangle,
   BarChart2,
@@ -241,7 +243,7 @@ import Badge from './ui/Badge.vue'
 import Button from './ui/Button.vue'
 import Card from './ui/Card.vue'
 
-const API_BASE = '/api'
+const API_BASE = '/api'  // used only for the multipart upload in uploadAll
 
 const fileInputRef = ref(null)
 const isDragging = ref(false)
@@ -349,20 +351,11 @@ const uploadAll = async () => {
   if (done) await loadTransactions()
 }
 
-const formatDate = (d) => {
-  if (!d) return ''
-  const [y, m, day] = d.split('-')
-  return `${day}/${m}/${y}`
-}
-
-const formatCurrency = (v) =>
-  Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const loadTransactions = async () => {
   loadingTx.value = true
   try {
-    const res = await fetch(`${API_BASE}/transactions`)
-    transactions.value = await res.json()
+    transactions.value = await getTransactions()
   } finally {
     loadingTx.value = false
   }

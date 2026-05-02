@@ -8,7 +8,7 @@
         </p>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <label class="text-sm font-medium text-muted-foreground whitespace-nowrap">Data de referência</label>
         <input
           v-model="asOf"
@@ -23,6 +23,16 @@
           @click="setToday"
         >
           Hoje
+        </button>
+        <button
+          type="button"
+          class="h-9 px-3 rounded-md border border-input text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+          :disabled="quotesRefreshing || !positions.length"
+          :title="quotesDate ? `Cotações de ${formatDate(quotesDate)}` : 'Buscar cotações do Yahoo Finance'"
+          @click="doRefreshQuotes"
+        >
+          <span v-if="quotesRefreshing">Atualizando…</span>
+          <span v-else>{{ quotesDate ? `Cotações ${formatDate(quotesDate)}` : 'Atualizar cotações' }}</span>
         </button>
       </div>
     </div>
@@ -42,18 +52,29 @@
     </div>
 
     <template v-else>
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Card class="px-4 py-3">
           <p class="text-xs text-muted-foreground">Ativos</p>
           <p class="text-xl font-bold mt-0.5">{{ positions.length }}</p>
         </Card>
         <Card class="px-4 py-3">
-          <p class="text-xs text-muted-foreground">Patrimônio estimado</p>
+          <p class="text-xs text-muted-foreground">Patrimônio (PM)</p>
           <p class="text-xl font-bold mt-0.5">{{ formatCurrency(totalPatrimony) }}</p>
         </Card>
         <Card class="px-4 py-3">
-          <p class="text-xs text-muted-foreground">Com ajuste manual</p>
-          <p class="text-xl font-bold mt-0.5">{{ positions.filter(p => p.is_overridden).length }}</p>
+          <p class="text-xs text-muted-foreground">Patrimônio (mercado)</p>
+          <p class="text-xl font-bold mt-0.5" :class="quotesLoading ? 'text-muted-foreground' : ''">
+            {{ quotesLoading ? '…' : totalMarketValue != null ? formatCurrency(totalMarketValue) : '—' }}
+          </p>
+        </Card>
+        <Card class="px-4 py-3">
+          <p class="text-xs text-muted-foreground">Resultado aberto</p>
+          <p
+            class="text-xl font-bold mt-0.5"
+            :class="quotesLoading ? 'text-muted-foreground' : totalUnrealizedPnl > 0 ? 'text-emerald-600' : totalUnrealizedPnl < 0 ? 'text-red-500' : ''"
+          >
+            {{ quotesLoading ? '…' : totalUnrealizedPnl != null ? (totalUnrealizedPnl >= 0 ? '+' : '') + formatCurrency(totalUnrealizedPnl) : '—' }}
+          </p>
         </Card>
         <Card class="px-4 py-3 col-span-2 sm:col-span-1">
           <p class="text-xs text-muted-foreground">Data base</p>
@@ -88,6 +109,17 @@
                     Custo total <SortIcon field="total" :sort-by="sortBy" :sort-dir="sortDir" />
                   </button>
                 </th>
+                <th class="px-4 py-3 text-right font-medium text-muted-foreground">
+                  <button type="button" class="flex items-center gap-1 ml-auto hover:text-foreground transition-colors" @click="toggleSort('price')">
+                    Cotação <SortIcon field="price" :sort-by="sortBy" :sort-dir="sortDir" />
+                  </button>
+                </th>
+                <th class="px-4 py-3 text-right font-medium text-muted-foreground">
+                  <button type="button" class="flex items-center gap-1 ml-auto hover:text-foreground transition-colors" @click="toggleSort('upnl')">
+                    Resultado aberto <SortIcon field="upnl" :sort-by="sortBy" :sort-dir="sortDir" />
+                  </button>
+                </th>
+                <th class="px-4 py-3 text-right font-medium text-muted-foreground">Var %</th>
                 <th class="px-4 py-3 text-center font-medium text-muted-foreground">Ajuste</th>
               </tr>
             </thead>
@@ -133,6 +165,21 @@
                 </td>
                 <td class="px-4 py-3 text-right tabular-nums">
                   {{ formatCurrency(pos.effective_quantity * Number(pos.effective_mean_price)) }}
+                </td>
+                <td class="px-4 py-3 text-right tabular-nums" :class="quotesLoading ? 'text-muted-foreground/50' : ''">
+                  {{ quotesLoading ? '…' : quotes[pos.ticker] != null ? formatCurrency(quotes[pos.ticker]) : '—' }}
+                </td>
+                <td
+                  class="px-4 py-3 text-right tabular-nums font-semibold"
+                  :class="unrealizedPnl(pos) == null ? 'text-muted-foreground' : unrealizedPnl(pos) > 0 ? 'text-emerald-600' : unrealizedPnl(pos) < 0 ? 'text-red-500' : ''"
+                >
+                  {{ unrealizedPnl(pos) == null ? (quotesLoading ? '…' : '—') : (unrealizedPnl(pos) >= 0 ? '+' : '') + formatCurrency(unrealizedPnl(pos)) }}
+                </td>
+                <td
+                  class="px-4 py-3 text-right tabular-nums"
+                  :class="unrealizedPct(pos) == null ? 'text-muted-foreground' : unrealizedPct(pos) > 0 ? 'text-emerald-600' : unrealizedPct(pos) < 0 ? 'text-red-500' : ''"
+                >
+                  {{ unrealizedPct(pos) == null ? '—' : (unrealizedPct(pos) >= 0 ? '+' : '') + unrealizedPct(pos).toFixed(2) + '%' }}
                 </td>
                 <td class="px-4 py-3 text-center">
                   <div class="flex items-center justify-center gap-1">
@@ -330,6 +377,17 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useSortable } from '@/composables/useSortable.js'
+import { assetTypeClass, formatCurrency, formatDate } from '@/utils/format.js'
+import {
+  deletePositionOverride,
+  getPositionBreakdown,
+  getPositions,
+  getQuotes,
+  refreshQuotes,
+  setTickerClassification,
+  updatePositionOverride,
+} from '@/services/api.js'
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Inbox as InboxIcon, Loader2, Pencil, RotateCcw, X } from 'lucide-vue-next'
 import Alert from '@/components/ui/Alert.vue'
 import Badge from '@/components/ui/Badge.vue'
@@ -350,6 +408,21 @@ const positions = ref([])
 const loading = ref(false)
 const error = ref('')
 const saving = ref(false)
+
+// ticker → { price: number, date: string } | undefined
+const quotesMap = ref({})
+const quotesLoading = ref(false)
+const quotesRefreshing = ref(false)
+
+// Convenience: quotes[ticker] is the price number (or null)
+const quotes = computed(() =>
+  Object.fromEntries(Object.entries(quotesMap.value).map(([t, q]) => [t, q?.price ?? null]))
+)
+const quotesDate = computed(() => {
+  const dates = Object.values(quotesMap.value).map(q => q?.date).filter(Boolean)
+  if (!dates.length) return null
+  return dates.sort().at(-1)  // most recent date across all tickers
+})
 const editTarget = ref(null)
 const editQty = ref('')
 const editPrice = ref('')
@@ -402,27 +475,10 @@ const assetTypeOptions = [
   { value: 'RF_PRE',     label: 'RF Pré' },
 ]
 
-const assetTypeClass = (type) => {
-  switch (type) {
-    case 'STOCK':      return 'text-blue-700 border-blue-200 bg-blue-50'
-    case 'FII':        return 'text-emerald-700 border-emerald-200 bg-emerald-50'
-    case 'BDR':        return 'text-purple-700 border-purple-200 bg-purple-50'
-    case 'ETF_RV':     return 'text-indigo-700 border-indigo-200 bg-indigo-50'
-    case 'SUBSCRICAO': return 'text-orange-700 border-orange-200 bg-orange-50'
-    case 'ETF_RF':     return 'text-slate-600 border-slate-200 bg-slate-50'
-    case 'RF_POS':     return 'text-slate-600 border-slate-200 bg-slate-50'
-    case 'RF_PRE':     return 'text-slate-600 border-slate-200 bg-slate-50'
-    default:           return ''
-  }
-}
 
 const setAssetType = async (ticker, assetType) => {
   try {
-    await fetch(`/api/ticker-classifications/${ticker}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ asset_type: assetType }),
-    })
+    await setTickerClassification(ticker, assetType)
     await load()
   } catch (e) {
     error.value = e.message
@@ -434,10 +490,7 @@ const openBreakdown = async (pos) => {
   breakdownSteps.value = []
   breakdownLoading.value = true
   try {
-    const url = `/api/positions/${pos.ticker}/breakdown` + (asOf.value ? `?as_of=${asOf.value}` : '')
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
-    breakdownSteps.value = await res.json()
+    breakdownSteps.value = await getPositionBreakdown(pos.ticker, asOf.value)
   } catch (e) {
     error.value = e.message
     breakdownTicker.value = null
@@ -461,52 +514,92 @@ const totalPatrimony = computed(() =>
   ),
 )
 
-const sortBy = ref('ticker')
-const sortDir = ref('asc')
+const unrealizedPnl = (pos) => {
+  const price = quotes.value[pos.ticker]
+  if (price == null) return null
+  return (price - Number(pos.effective_mean_price)) * pos.effective_quantity
+}
 
-const toggleSort = (field) => {
-  if (sortBy.value === field) {
-    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    sortBy.value = field
-    sortDir.value = 'asc'
+const unrealizedPct = (pos) => {
+  const pm = Number(pos.effective_mean_price)
+  const price = quotes.value[pos.ticker]
+  if (price == null || !pm) return null
+  return ((price - pm) / pm) * 100
+}
+
+const totalMarketValue = computed(() => {
+  const list = positions.value
+  if (!list.length || !Object.keys(quotes.value).length) return null
+  let total = 0
+  let hasAny = false
+  for (const p of list) {
+    const price = quotes.value[p.ticker]
+    if (price != null) { total += price * p.effective_quantity; hasAny = true }
+    else total += p.effective_quantity * Number(p.effective_mean_price)
+  }
+  return hasAny ? total : null
+})
+
+const totalUnrealizedPnl = computed(() => {
+  const list = positions.value
+  if (!list.length) return null
+  let total = 0
+  let hasAny = false
+  for (const p of list) {
+    const pnl = unrealizedPnl(p)
+    if (pnl != null) { total += pnl; hasAny = true }
+  }
+  return hasAny ? total : null
+})
+
+const { sortBy, sortDir, sorted: sortedPositions, toggleSort } = useSortable(positions, {
+  ticker: (a, b) => a.ticker.localeCompare(b.ticker),
+  qty:    (a, b) => a.effective_quantity - b.effective_quantity,
+  pm:     (a, b) => Number(a.computed_mean_price) - Number(b.computed_mean_price),
+  total:  (a, b) =>
+    a.effective_quantity * Number(a.effective_mean_price) -
+    b.effective_quantity * Number(b.effective_mean_price),
+  price:  (a, b) => (quotes.value[a.ticker] ?? -Infinity) - (quotes.value[b.ticker] ?? -Infinity),
+  upnl:   (a, b) => (unrealizedPnl(a) ?? -Infinity) - (unrealizedPnl(b) ?? -Infinity),
+})
+sortBy.value = 'ticker'
+
+
+const buildQuotesMap = (rows) =>
+  Object.fromEntries(rows.map(r => [r.ticker, { price: Number(r.close_price), date: r.date }]))
+
+const loadQuotes = async () => {
+  const tickers = positions.value.map(p => p.ticker)
+  if (!tickers.length) return
+  quotesLoading.value = true
+  try {
+    const rows = await getQuotes(tickers)
+    quotesMap.value = buildQuotesMap(rows)
+  } catch {
+    // quotes are best-effort
+  } finally {
+    quotesLoading.value = false
   }
 }
 
-const sortedPositions = computed(() => {
-  const list = [...positions.value]
-  const dir = sortDir.value === 'asc' ? 1 : -1
-  return list.sort((a, b) => {
-    switch (sortBy.value) {
-      case 'ticker': return dir * a.ticker.localeCompare(b.ticker)
-      case 'qty':    return dir * (a.effective_quantity - b.effective_quantity)
-      case 'pm':     return dir * (Number(a.computed_mean_price) - Number(b.computed_mean_price))
-      case 'total':  return dir * (
-        a.effective_quantity * Number(a.effective_mean_price) -
-        b.effective_quantity * Number(b.effective_mean_price)
-      )
-      default: return 0
-    }
-  })
-})
-
-const formatCurrency = (v) =>
-  Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-
-const formatDate = (iso) => {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
+const doRefreshQuotes = async () => {
+  quotesRefreshing.value = true
+  try {
+    const rows = await refreshQuotes()
+    quotesMap.value = buildQuotesMap(rows)
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    quotesRefreshing.value = false
+  }
 }
 
 const load = async () => {
   loading.value = true
   error.value = ''
   try {
-    const url = asOf.value ? `/api/positions?as_of=${asOf.value}` : '/api/positions'
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
-    positions.value = await res.json()
+    positions.value = await getPositions(asOf.value)
+    loadQuotes() // fire-and-forget so positions appear immediately
   } catch (e) {
     error.value = e.message
   } finally {
@@ -526,13 +619,7 @@ const saveOverride = async () => {
     const body = {}
     if (editQty.value !== '') body.manual_quantity = Number(editQty.value)
     if (editPrice.value !== '') body.manual_mean_price = editPrice.value
-
-    const res = await fetch(`/api/positions/${editTarget.value.ticker}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
+    await updatePositionOverride(editTarget.value.ticker, body)
     editTarget.value = null
     await load()
   } catch (e) {
@@ -544,8 +631,7 @@ const saveOverride = async () => {
 
 const clearOverride = async (ticker) => {
   try {
-    const res = await fetch(`/api/positions/${ticker}/override`, { method: 'DELETE' })
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
+    await deletePositionOverride(ticker)
     await load()
   } catch (e) {
     error.value = e.message

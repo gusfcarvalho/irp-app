@@ -1,15 +1,14 @@
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.db import engine
-from app.models.db_models import TickerClassification
+from app.models.enums import AssetType
+from app.repositories.ticker import TickerClassificationRepository
 
 router = APIRouter(tags=["ticker-classifications"])
 
-VALID_TYPES = {"STOCK", "FII", "BDR", "ETF_RV", "ETF_RF", "SUBSCRICAO", "RF_POS", "RF_PRE"}
+VALID_TYPES = set(AssetType)
 
 
 class ClassificationOut(BaseModel):
@@ -22,19 +21,11 @@ class ClassificationPut(BaseModel):
     asset_type: str
 
 
-def _to_out(c: TickerClassification) -> ClassificationOut:
-    return ClassificationOut(
-        ticker=c.ticker,
-        asset_type=c.asset_type,
-        updated_at=c.updated_at.isoformat(),
-    )
-
-
 @router.get("/ticker-classifications", response_model=list[ClassificationOut])
 def list_classifications() -> list[ClassificationOut]:
     with Session(engine) as session:
-        rows = session.exec(select(TickerClassification).order_by(TickerClassification.ticker)).all()
-    return [_to_out(r) for r in rows]
+        rows = TickerClassificationRepository(session).get_all()
+    return [ClassificationOut(ticker=r.ticker, asset_type=r.asset_type, updated_at=r.updated_at.isoformat()) for r in rows]
 
 
 @router.put("/ticker-classifications/{ticker}", response_model=ClassificationOut)
@@ -43,24 +34,20 @@ def set_classification(ticker: str, body: ClassificationPut) -> ClassificationOu
     if body.asset_type not in VALID_TYPES:
         raise HTTPException(status_code=422, detail=f"Invalid asset_type {body.asset_type!r}. Valid: {sorted(VALID_TYPES)}")
     with Session(engine) as session:
-        row = session.get(TickerClassification, ticker)
-        if row is None:
-            row = TickerClassification(ticker=ticker, asset_type=body.asset_type)
-        else:
-            row.asset_type = body.asset_type
-            row.updated_at = datetime.now(UTC)
-        session.add(row)
+        repo = TickerClassificationRepository(session)
+        row = repo.upsert(ticker, body.asset_type)
         session.commit()
         session.refresh(row)
-    return _to_out(row)
+    return ClassificationOut(ticker=row.ticker, asset_type=row.asset_type, updated_at=row.updated_at.isoformat())
 
 
 @router.delete("/ticker-classifications/{ticker}", status_code=204)
 def delete_classification(ticker: str) -> None:
     ticker = ticker.upper().strip()
     with Session(engine) as session:
-        row = session.get(TickerClassification, ticker)
+        repo = TickerClassificationRepository(session)
+        row = repo.get_by_ticker(ticker)
         if not row:
             raise HTTPException(status_code=404, detail="Classification not found")
-        session.delete(row)
+        repo.delete(row)
         session.commit()

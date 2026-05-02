@@ -138,6 +138,8 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import { formatCurrency, formatDate, formatDatetime } from '@/utils/format.js'
+import { getUploads } from '@/services/api.js'
 import { RouterLink } from 'vue-router'
 import {
   AlertTriangle,
@@ -167,20 +169,6 @@ const toggle = (id) => {
   expanded.value = new Set(expanded.value)
 }
 
-const formatDate = (d) => {
-  if (!d) return ''
-  const [y, m, day] = String(d).split('-')
-  return `${day}/${m}/${y}`
-}
-
-const formatDatetime = (iso) => {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-}
-
-const formatCurrency = (v) =>
-  Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const totalValue = (nota) =>
   nota.transactions.reduce((sum, t) => sum + Number(t.price) * t.quantity, 0)
@@ -207,9 +195,7 @@ const load = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await fetch('/api/uploads')
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
-    notas.value = await res.json()
+    notas.value = await getUploads()
   } catch (e) {
     error.value = e.message
   } finally {

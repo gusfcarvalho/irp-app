@@ -46,7 +46,7 @@
 
     <template v-else>
       <!-- Summary cards -->
-      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card class="px-4 py-3 col-span-2 sm:col-span-1">
           <p class="text-xs text-muted-foreground">Resultado total</p>
           <p
@@ -65,19 +65,18 @@
           <p class="text-xl font-bold mt-0.5 text-emerald-600">{{ summary.winners }}</p>
         </Card>
         <Card class="px-4 py-3">
-          <p class="text-xs text-muted-foreground">Perdedoras</p>
-          <p class="text-xl font-bold mt-0.5 text-red-500">{{ summary.losers }}</p>
-        </Card>
-        <Card class="px-4 py-3">
-          <p class="text-xs text-muted-foreground">Taxa de acerto</p>
+          <p class="text-xs text-muted-foreground">Perdedoras / acerto</p>
           <p class="text-xl font-bold mt-0.5">
-            {{ summary.total ? (summary.winners / summary.total * 100).toFixed(0) + '%' : '—' }}
+            <span class="text-red-500">{{ summary.losers }}</span>
+            <span class="text-muted-foreground text-sm font-normal ml-1">({{ summary.total ? (summary.winners / summary.total * 100).toFixed(0) + '%' : '—' }})</span>
           </p>
         </Card>
       </div>
 
-      <!-- Empty state -->
-      <div v-if="!positions.length" class="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+      <!-- Closed positions -->
+      <div>
+
+      <div v-if="!positions.length" class="flex flex-col items-center gap-3 py-8 text-muted-foreground border rounded-lg">
         <InboxIcon class="h-10 w-10 opacity-25" />
         <p class="text-sm">Nenhuma posição fechada no período selecionado.</p>
       </div>
@@ -170,6 +169,7 @@
           </table>
         </div>
       </Card>
+      </div> <!-- /Posições Fechadas -->
     </template>
 
     <!-- PM breakdown drawer -->
@@ -278,6 +278,8 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { formatCurrency, formatDate } from '@/utils/format.js'
+import { getClosedPositions, getPositionBreakdown } from '@/services/api.js'
 import { AlertTriangle, Inbox as InboxIcon, Loader2, X } from 'lucide-vue-next'
 import Alert from '@/components/ui/Alert.vue'
 import Badge from '@/components/ui/Badge.vue'
@@ -328,10 +330,7 @@ const openBreakdown = async (pos, asOf) => {
   breakdownSteps.value = []
   breakdownLoading.value = true
   try {
-    const url = `/api/positions/${pos.ticker}/breakdown` + (asOf ? `?as_of=${asOf}` : '')
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
-    breakdownSteps.value = await res.json()
+    breakdownSteps.value = await getPositionBreakdown(pos.ticker, asOf)
   } catch (e) {
     error.value = e.message
     breakdownTicker.value = null
@@ -361,14 +360,6 @@ const summary = computed(() => {
   }
 })
 
-const formatCurrency = (v) =>
-  Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-
-const formatDate = (iso) => {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
 
 const pnlPct = (pos) => {
   const open = Number(pos.open_mean_price)
@@ -382,12 +373,7 @@ const load = async () => {
   loading.value = true
   error.value = ''
   try {
-    const params = new URLSearchParams()
-    if (fromDate.value) params.set('from_date', fromDate.value)
-    if (toDate.value) params.set('to_date', toDate.value)
-    const res = await fetch(`/api/closed-positions?${params}`)
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
-    positions.value = await res.json()
+    positions.value = await getClosedPositions(fromDate.value, toDate.value)
   } catch (e) {
     error.value = e.message
   } finally {

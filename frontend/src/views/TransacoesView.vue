@@ -345,6 +345,15 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import { assetTypeClass, formatCurrency, formatDate } from '@/utils/format.js'
+import {
+  createManualTransaction,
+  deleteManualTransaction,
+  getManualTransactions,
+  getTickerClassifications,
+  setTickerClassification,
+  updateManualTransaction,
+} from '@/services/api.js'
 import { AlertTriangle, Inbox as InboxIcon, Loader2, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 import Alert from '@/components/ui/Alert.vue'
 import Badge from '@/components/ui/Badge.vue'
@@ -373,24 +382,10 @@ const autoClassify = (ticker) => {
   return 'STOCK'
 }
 
-const assetTypeClass = (type) => {
-  switch (type) {
-    case 'STOCK':      return 'text-blue-700 border-blue-200 bg-blue-50'
-    case 'FII':        return 'text-emerald-700 border-emerald-200 bg-emerald-50'
-    case 'BDR':        return 'text-purple-700 border-purple-200 bg-purple-50'
-    case 'ETF_RV':     return 'text-indigo-700 border-indigo-200 bg-indigo-50'
-    case 'SUBSCRICAO': return 'text-orange-700 border-orange-200 bg-orange-50'
-    default:           return 'text-slate-600 border-slate-200 bg-slate-50'
-  }
-}
 
 const setAssetType = async (ticker, assetType) => {
   try {
-    await fetch(`/api/ticker-classifications/${ticker}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ asset_type: assetType }),
-    })
+    await setTickerClassification(ticker, assetType)
     classifications.value[ticker] = assetType
   } catch (e) {
     error.value = e.message
@@ -424,14 +419,6 @@ const defaultForm = () => ({
 
 const form = ref(defaultForm())
 
-const formatDate = (iso) => {
-  if (!iso) return '-'
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-
-const formatCurrency = (v) =>
-  Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const getTypeLabel = (type) => {
   const labels = {
@@ -454,16 +441,12 @@ const load = async () => {
   loading.value = true
   error.value = ''
   try {
-    const [txnRes, clsRes] = await Promise.all([
-      fetch('/api/manual-transactions'),
-      fetch('/api/ticker-classifications'),
+    const [txns, cls] = await Promise.all([
+      getManualTransactions(),
+      getTickerClassifications(),
     ])
-    if (!txnRes.ok) throw new Error(`Erro ${txnRes.status}`)
-    transactions.value = await txnRes.json()
-    if (clsRes.ok) {
-      const cls = await clsRes.json()
-      classifications.value = Object.fromEntries(cls.map(c => [c.ticker, c.asset_type]))
-    }
+    transactions.value = txns
+    classifications.value = Object.fromEntries(cls.map(c => [c.ticker, c.asset_type]))
   } catch (e) {
     error.value = e.message
   } finally {
@@ -508,23 +491,11 @@ const saveTransaction = async () => {
   try {
     const body = { ...form.value }
     body.ticker = body.ticker.toUpperCase()
-
-    const url = editingId.value
-      ? `/api/manual-transactions/${editingId.value}`
-      : '/api/manual-transactions'
-    const method = editingId.value ? 'PUT' : 'POST'
-
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-
-    if (!res.ok) {
-      const data = await res.json()
-      throw new Error(data.detail || `Erro ${res.status}`)
+    if (editingId.value) {
+      await updateManualTransaction(editingId.value, body)
+    } else {
+      await createManualTransaction(body)
     }
-
     showForm.value = false
     await load()
   } catch (e) {
@@ -541,10 +512,7 @@ const confirmDelete = (txn) => {
 const deleteTransaction = async () => {
   if (!deleteTarget.value) return
   try {
-    const res = await fetch(`/api/manual-transactions/${deleteTarget.value.id}`, {
-      method: 'DELETE',
-    })
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
+    await deleteManualTransaction(deleteTarget.value.id)
     deleteTarget.value = null
     await load()
   } catch (e) {

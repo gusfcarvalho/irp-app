@@ -4,11 +4,12 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.db import engine
 from app.models.db_models import Position
-from app.services.position_engine import build_txns_with_fees, compute_positions, compute_positions_with_steps
+from app.repositories.position import PositionRepository
+from app.services.position_service import PositionService
 from app.services.tax_engine import classify_ticker, load_classification_overrides
 
 router = APIRouter(tags=["positions"])
@@ -77,25 +78,15 @@ def _to_out(pos: Position, computed: dict, overrides: dict | None = None) -> Pos
 @router.post("/positions/recalculate", response_model=list[PositionOut])
 def recalculate_positions() -> list[PositionOut]:
     with Session(engine) as session:
-        txns, corp_actions = build_txns_with_fees(session)
-        computed = compute_positions(txns, corp_actions)
+        computed = PositionService(session).compute()
         overrides = load_classification_overrides(session)
-
-        existing: dict[str, Position] = {
-            p.ticker: p for p in session.exec(select(Position)).all()
-        }
+        repo = PositionRepository(session)
 
         for ticker, cp in computed.items():
-            pos = existing.get(ticker) or Position(ticker=ticker)
-            pos.quantity = cp.quantity
-            pos.mean_price = cp.mean_price
-            pos.updated_at = datetime.now(UTC)
-            session.add(pos)
+            repo.upsert_computed(ticker, cp.quantity, cp.mean_price)
 
         session.commit()
-
-        all_positions = session.exec(select(Position)).all()
-        return [_to_out(p, computed, overrides) for p in all_positions]
+        return [_to_out(p, computed, overrides) for p in repo.get_all()]
 
 
 @router.get("/positions", response_model=list[PositionOut])
@@ -103,15 +94,15 @@ def list_positions(
     as_of: Optional[date] = Query(default=None, description="Include transactions up to this date (YYYY-MM-DD)"),
 ) -> list[PositionOut]:
     with Session(engine) as session:
-        txns, corp_actions = build_txns_with_fees(session, as_of_date=as_of)
-        computed = compute_positions(txns, corp_actions)
+        computed = PositionService(session).compute(as_of_date=as_of)
         overrides = load_classification_overrides(session)
-        all_positions = session.exec(select(Position)).all()
+        repo = PositionRepository(session)
+        all_positions = repo.get_all()
         tickers_in_db = {p.ticker for p in all_positions}
         for ticker, cp in computed.items():
             if ticker not in tickers_in_db:
                 pos = Position(ticker=ticker, quantity=cp.quantity, mean_price=cp.mean_price)
-                session.add(pos)
+                repo.save(pos)
                 all_positions = list(all_positions) + [pos]
         session.commit()
         return [
@@ -130,8 +121,7 @@ def get_breakdown(
     as_of: Optional[date] = Query(default=None, description="Include transactions up to this date"),
 ) -> list[TradeStepOut]:
     with Session(engine) as session:
-        txns, corp_actions = build_txns_with_fees(session, as_of_date=as_of)
-    _, steps, _ = compute_positions_with_steps(txns, corp_actions)
+        _, steps, _ = PositionService(session).compute_with_steps(as_of_date=as_of)
     ticker_steps = steps.get(ticker)
     if ticker_steps is None:
         raise HTTPException(status_code=404, detail=f"No transactions found for {ticker!r}")
@@ -159,8 +149,7 @@ def list_closed_positions(
     ticker: Optional[str] = Query(default=None, description="Filter by ticker"),
 ) -> list[ClosedPositionOut]:
     with Session(engine) as session:
-        txns, corp_actions = build_txns_with_fees(session, as_of_date=to_date)
-    _, _, closed = compute_positions_with_steps(txns, corp_actions)
+        _, _, closed = PositionService(session).compute_with_steps(as_of_date=to_date)
     if from_date:
         closed = [c for c in closed if c.close_date >= from_date]
     if to_date:
@@ -185,7 +174,8 @@ def list_closed_positions(
 @router.patch("/positions/{ticker}", response_model=PositionOut)
 def patch_position(ticker: str, body: PositionPatch) -> PositionOut:
     with Session(engine) as session:
-        pos = session.get(Position, ticker)
+        repo = PositionRepository(session)
+        pos = repo.get_by_ticker(ticker)
         if pos is None:
             raise HTTPException(status_code=404, detail=f"Position {ticker!r} not found")
         if body.manual_mean_price is not None:
@@ -193,12 +183,11 @@ def patch_position(ticker: str, body: PositionPatch) -> PositionOut:
         if body.manual_quantity is not None:
             pos.manual_quantity = body.manual_quantity
         pos.updated_at = datetime.now(UTC)
-        session.add(pos)
+        repo.save(pos)
         session.commit()
         session.refresh(pos)
 
-        txns, corp_actions = build_txns_with_fees(session)
-        computed = compute_positions(txns, corp_actions)
+        computed = PositionService(session).compute()
         overrides = load_classification_overrides(session)
         return _to_out(pos, computed, overrides)
 
@@ -206,17 +195,17 @@ def patch_position(ticker: str, body: PositionPatch) -> PositionOut:
 @router.delete("/positions/{ticker}/override", response_model=PositionOut)
 def clear_override(ticker: str) -> PositionOut:
     with Session(engine) as session:
-        pos = session.get(Position, ticker)
+        repo = PositionRepository(session)
+        pos = repo.get_by_ticker(ticker)
         if pos is None:
             raise HTTPException(status_code=404, detail=f"Position {ticker!r} not found")
         pos.manual_mean_price = None
         pos.manual_quantity = None
         pos.updated_at = datetime.now(UTC)
-        session.add(pos)
+        repo.save(pos)
         session.commit()
         session.refresh(pos)
 
-        txns, corp_actions = build_txns_with_fees(session)
-        computed = compute_positions(txns, corp_actions)
+        computed = PositionService(session).compute()
         overrides = load_classification_overrides(session)
         return _to_out(pos, computed, overrides)

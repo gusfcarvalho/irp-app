@@ -148,6 +148,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { formatCurrency, formatDate, pnlClass } from '@/utils/format.js'
 import Badge from '@/components/ui/Badge.vue'
 import Card from '@/components/ui/Card.vue'
 
@@ -158,15 +159,4 @@ const open = ref(true)
 
 const taxRateLabel = computed(() => (Number(props.data.tax_rate) * 100).toFixed(0) + '%')
 
-const formatCurrency = (v) =>
-  Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-
-const formatDate = (iso) => {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-
-const pnlClass = (v) =>
-  Number(v) > 0 ? 'text-emerald-600' : Number(v) < 0 ? 'text-red-500' : ''
 </script>

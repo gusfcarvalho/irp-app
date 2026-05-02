@@ -1,6 +1,5 @@
 import logging
 import os
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,20 +7,17 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from sqlmodel import Session, select
 
 from app.db import engine
-from app.models.db_models import TickerAlias, Transaction, Upload
+from app.models.db_models import Transaction, Upload
 from app.models.schemas import TransactionOut, UploadOut, UploadResponse
+from app.repositories.upload import UploadRepository
+from app.services.parsers.base import BrokerageParserPort
 from app.services.parsers.btg_adapter import BTGParserAdapter
-
-_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{2,4}\d{1,2}$")
-
-
-def _normalize_raw(s: str) -> str:
-    return " ".join(s.split()).upper()
+from app.services.ticker_service import TickerService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["importer"])
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./data/uploads"))
-parser = BTGParserAdapter()
+parser: BrokerageParserPort = BTGParserAdapter()
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -73,7 +69,7 @@ async def upload_pdf(
         session.add(upload)
         session.flush()
 
-        pending_aliases: list[str] = []
+        ticker_svc = TickerService(session)
         for trade in result.trades:
             if trade.quantity == 0:
                 logger.warning(
@@ -81,24 +77,7 @@ async def upload_pdf(
                     file.filename, result.note_number, trade.ticker, trade.trade_date, trade.side, trade.price,
                 )
 
-            ticker = trade.ticker
-            if not _TICKER_RE.match(ticker.upper().strip()):
-                raw_name = _normalize_raw(ticker)
-                alias = session.get(TickerAlias, raw_name)
-                if alias and alias.confirmed and alias.ticker:
-                    ticker = alias.ticker
-                    logger.info("Alias resolved %r → %r", raw_name, ticker)
-                else:
-                    if alias is None:
-                        alias = TickerAlias(raw_name=raw_name)
-                        session.add(alias)
-                    elif alias.ticker:
-                        # Pre-fill suggested ticker from Yahoo if previously cached
-                        pass
-                    ticker = raw_name
-                    if raw_name not in pending_aliases:
-                        pending_aliases.append(raw_name)
-
+            ticker = ticker_svc.resolve(trade.ticker)
             session.add(
                 Transaction(
                     upload_id=upload.id,
@@ -118,17 +97,16 @@ async def upload_pdf(
         id=upload.id,
         filename=upload.filename,
         transactions_created=len(result.trades),
-        pending_aliases=pending_aliases,
+        pending_aliases=ticker_svc.pending_aliases,
     )
 
 
 @router.get("/uploads", response_model=list[UploadOut])
 def list_uploads() -> list[UploadOut]:
     with Session(engine) as session:
-        uploads = session.exec(select(Upload).order_by(Upload.uploaded_at.desc())).all()
-        txns_by_upload: dict[str, list[Transaction]] = {}
-        for tx in session.exec(select(Transaction)).all():
-            txns_by_upload.setdefault(tx.upload_id, []).append(tx)
+        repo = UploadRepository(session)
+        uploads = repo.get_all()
+        txns_by_upload = repo.get_transactions_grouped()
 
     return [
         UploadOut(
@@ -170,7 +148,7 @@ def list_uploads() -> list[UploadOut]:
 @router.get("/transactions", response_model=list[TransactionOut])
 def list_transactions() -> list[TransactionOut]:
     with Session(engine) as session:
-        rows = session.exec(select(Transaction).order_by(Transaction.trade_date.desc())).all()
+        rows = UploadRepository(session).get_all_transactions()
 
     return [
         TransactionOut(

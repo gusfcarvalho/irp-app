@@ -60,12 +60,12 @@
               placeholder="Ticker B3"
               class="h-8 w-28 rounded-md border border-input bg-background px-2 text-sm font-mono uppercase shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
               @input="editValues[alias.raw_name] = editValues[alias.raw_name].toUpperCase()"
-              @keyup.enter="confirm(alias.raw_name)"
+              @keyup.enter="confirmAlias(alias.raw_name)"
             />
             <Button
               size="sm"
               :disabled="!editValues[alias.raw_name]?.trim() || confirming[alias.raw_name]"
-              @click="confirm(alias.raw_name)"
+              @click="confirmAlias(alias.raw_name)"
             >
               <Check class="h-3.5 w-3.5 mr-1" />
               Confirmar
@@ -115,7 +115,7 @@
                     type="text"
                     class="h-7 w-24 rounded-md border border-input bg-background px-2 text-sm font-mono uppercase shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     @input="editValues[alias.raw_name] = editValues[alias.raw_name].toUpperCase()"
-                    @keyup.enter="confirm(alias.raw_name)"
+                    @keyup.enter="confirmAlias(alias.raw_name)"
                     @keyup.escape="editing = null"
                     autofocus
                   />
@@ -126,7 +126,7 @@
               <td class="px-4 py-2">
                 <div class="flex items-center gap-1 justify-end">
                   <template v-if="editing === alias.raw_name">
-                    <Button size="sm" variant="ghost" @click="confirm(alias.raw_name)">
+                    <Button size="sm" variant="ghost" @click="confirmAlias(alias.raw_name)">
                       <Check class="h-3.5 w-3.5" />
                     </Button>
                     <button type="button" class="p-1 text-muted-foreground hover:text-foreground" @click="editing = null">
@@ -161,11 +161,11 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { formatDate } from '@/utils/format.js'
+import { createTickerAlias, deleteTickerAlias, getTickerAliases, updateTickerAlias } from '@/services/api.js'
 import { AlertTriangle, Check, CheckCircle, Pencil, Trash2, X } from 'lucide-vue-next'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
-
-const API_BASE = '/api'
 
 const aliases = ref([])
 const editValues = reactive({})
@@ -180,9 +180,7 @@ const pending = computed(() => aliases.value.filter(a => !a.confirmed))
 const confirmed = computed(() => aliases.value.filter(a => a.confirmed))
 
 const load = async () => {
-  const res = await fetch(`${API_BASE}/ticker-aliases`)
-  aliases.value = await res.json()
-  // pre-fill edit values for pending aliases
+  aliases.value = await getTickerAliases()
   for (const a of aliases.value) {
     if (!a.confirmed) {
       editValues[a.raw_name] = editValues[a.raw_name] ?? (a.ticker ?? '')
@@ -190,31 +188,24 @@ const load = async () => {
   }
 }
 
-const confirm = async (rawName) => {
+const confirmAlias = async (rawName) => {
   const ticker = (editValues[rawName] ?? '').trim().toUpperCase()
   if (!ticker) return
   confirming[rawName] = true
   try {
-    const res = await fetch(`${API_BASE}/ticker-aliases/${encodeURIComponent(rawName)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      alert(body.detail ?? `Erro ${res.status}`)
-      return
-    }
+    await updateTickerAlias(rawName, { ticker })
     editing.value = null
     await load()
+  } catch (e) {
+    alert(e.message)
   } finally {
     confirming[rawName] = false
   }
 }
 
 const remove = async (rawName) => {
-  if (!confirm(`Remover mapeamento "${rawName}"?`)) return
-  await fetch(`${API_BASE}/ticker-aliases/${encodeURIComponent(rawName)}`, { method: 'DELETE' })
+  if (!window.confirm(`Remover mapeamento "${rawName}"?`)) return
+  await deleteTickerAlias(rawName)
   await load()
 }
 
@@ -227,28 +218,17 @@ const createAlias = async () => {
   createError.value = ''
   saving.value = true
   try {
-    const res = await fetch(`${API_BASE}/ticker-aliases`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw_name: newRaw.value.trim(), ticker: newTicker.value.trim() }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      createError.value = body.detail ?? `Erro ${res.status}`
-      return
-    }
+    await createTickerAlias({ raw_name: newRaw.value.trim(), ticker: newTicker.value.trim() })
     newRaw.value = ''
     newTicker.value = ''
     await load()
+  } catch (e) {
+    createError.value = e.message
   } finally {
     saving.value = false
   }
 }
 
-const formatDate = (iso) => {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('pt-BR')
-}
 
 onMounted(load)
 </script>

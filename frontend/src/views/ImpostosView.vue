@@ -26,10 +26,10 @@
         <button
           type="button"
           class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-          :disabled="loading"
-          @click="load"
+          :disabled="loading || calculating"
+          @click="recalculate"
         >
-          Calcular
+          {{ calculating ? 'Calculando…' : report ? 'Recalcular' : 'Calcular' }}
         </button>
       </div>
     </div>
@@ -44,6 +44,11 @@
     </div>
 
     <template v-else-if="report">
+      <!-- Cache timestamp -->
+      <p v-if="report.cached_at" class="text-xs text-muted-foreground -mt-2">
+        Calculado em {{ formatDatetime(report.cached_at) }}
+      </p>
+
       <!-- Divergence alert -->
       <Alert v-if="report.payment_diverges" variant="destructive">
         <AlertTriangle class="h-4 w-4 shrink-0 mt-0.5" />
@@ -306,7 +311,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { formatCurrency, formatDate, formatDatetime } from '@/utils/format.js'
+import { calculateTaxReport, deleteTaxPayment, getPositionBreakdown, getTaxReport, upsertTaxPayment } from '@/services/api.js'
 import { AlertTriangle, Calculator, CheckCircle2, CreditCard, Loader2, X } from 'lucide-vue-next'
 import Alert from '@/components/ui/Alert.vue'
 import AssetSection from '@/components/AssetSection.vue'
@@ -337,6 +344,7 @@ const years = Array.from({ length: 6 }, (_, i) => currentYear - 5 + i).reverse()
 
 const report = ref(null)
 const loading = ref(false)
+const calculating = ref(false)
 const error = ref('')
 
 const sections = computed(() => {
@@ -348,14 +356,6 @@ const sections = computed(() => {
   ].filter(s => s.data.closed_positions.length > 0 || Number(s.data.total_sold_value) > 0)
 })
 
-const formatCurrency = (v) =>
-  Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-
-const formatDate = (iso) => {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('T')[0].split('-')
-  return `${d}/${m}/${y}`
-}
 
 // ── PM breakdown drawer ───────────────────────────────────────────────────────
 const breakdownTicker = ref(null)
@@ -398,10 +398,7 @@ const openBreakdown = async ({ ticker, asOf }) => {
   breakdownSteps.value = []
   breakdownLoading.value = true
   try {
-    const url = `/api/positions/${ticker}/breakdown` + (asOf ? `?as_of=${asOf}` : '')
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
-    breakdownSteps.value = await res.json()
+    breakdownSteps.value = await getPositionBreakdown(ticker, asOf)
   } catch (e) {
     error.value = e.message
     breakdownTicker.value = null
@@ -439,15 +436,7 @@ const savePayment = async () => {
   paymentSaving.value = true
   try {
     const month = `${selectedYear.value}-${selectedMonth.value}`
-    const res = await fetch(`/api/tax-payments/${month}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount_paid: amount, notes: paymentNotes.value || null }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.detail || `Erro ${res.status}`)
-    }
+    await upsertTaxPayment(month, { amount_paid: amount, notes: paymentNotes.value || null })
     paymentModalOpen.value = false
     await load()
   } catch (e) {
@@ -458,14 +447,10 @@ const savePayment = async () => {
 }
 
 const deletePayment = async () => {
-  if (!confirm('Remover registro de pagamento?')) return
+  if (!window.confirm('Remover registro de pagamento?')) return
   try {
     const month = `${selectedYear.value}-${selectedMonth.value}`
-    const res = await fetch(`/api/tax-payments/${month}`, { method: 'DELETE' })
-    if (!res.ok && res.status !== 404) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.detail || `Erro ${res.status}`)
-    }
+    await deleteTaxPayment(month).catch(e => { if (!e.message.includes('404')) throw e })
     await load()
   } catch (e) {
     error.value = e.message
@@ -478,18 +463,29 @@ const load = async () => {
   report.value = null
   try {
     const month = `${selectedYear.value}-${selectedMonth.value}`
-    const res = await fetch(`/api/tax?month=${month}`)
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.detail || `Erro ${res.status}`)
-    }
-    report.value = await res.json()
+    report.value = await getTaxReport(month)
   } catch (e) {
-    error.value = e.message
+    if (!e.message.includes('404')) error.value = e.message
+    // 404 just means no cache yet — show empty state
   } finally {
     loading.value = false
   }
 }
+
+const recalculate = async () => {
+  calculating.value = true
+  error.value = ''
+  try {
+    const month = `${selectedYear.value}-${selectedMonth.value}`
+    report.value = await calculateTaxReport(month)
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    calculating.value = false
+  }
+}
+
+watch([selectedYear, selectedMonth], load, { immediate: true })
 </script>
 
 <style scoped>

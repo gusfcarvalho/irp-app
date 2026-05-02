@@ -1,7 +1,23 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class FeeFieldsSchema(BaseModel):
+    """Mixin carrying the 12 standard brokerage fee fields for schema classes."""
+    settlement_fee: Decimal = Decimal(0)
+    registration_fee: Decimal = Decimal(0)
+    term_fee: Decimal = Decimal(0)
+    ana_fee: Decimal = Decimal(0)
+    emoluments: Decimal = Decimal(0)
+    operational_fee: Decimal = Decimal(0)
+    execution: Decimal = Decimal(0)
+    custody_fee: Decimal = Decimal(0)
+    taxes: Decimal = Decimal(0)
+    irrf: Decimal = Decimal(0)
+    other_fees: Decimal = Decimal(0)
+    depositary_fee: Decimal = Decimal(0)
 
 
 class Trade(BaseModel):
@@ -68,28 +84,16 @@ class TransactionOut(BaseModel):
     market_type: str
 
 
-class UploadOut(BaseModel):
+class UploadOut(FeeFieldsSchema):
     id: str
     filename: str
     broker: str
     note_number: str | None
     uploaded_at: str
-    settlement_fee: Decimal = Decimal(0)
-    registration_fee: Decimal = Decimal(0)
-    term_fee: Decimal = Decimal(0)
-    ana_fee: Decimal = Decimal(0)
-    emoluments: Decimal = Decimal(0)
-    operational_fee: Decimal = Decimal(0)
-    execution: Decimal = Decimal(0)
-    custody_fee: Decimal = Decimal(0)
-    taxes: Decimal = Decimal(0)
-    irrf: Decimal = Decimal(0)
-    other_fees: Decimal = Decimal(0)
-    depositary_fee: Decimal = Decimal(0)
     transactions: list[TransactionOut] = []
 
 
-class ManualTransactionCreate(BaseModel):
+class ManualTransactionCreate(FeeFieldsSchema):
     ticker: str
     trade_date: date
     transaction_type: str = Field(pattern="^(BUY|SELL|GROUPING|SPLITTING|BONUS)$")
@@ -97,21 +101,27 @@ class ManualTransactionCreate(BaseModel):
     price: Decimal | None = None  # Required for BUY/SELL
     ratio_from: int | None = None  # Required for GROUPING/SPLITTING
     ratio_to: int | None = None  # Required for GROUPING/SPLITTING
-    settlement_fee: Decimal = Decimal(0)
-    registration_fee: Decimal = Decimal(0)
-    term_fee: Decimal = Decimal(0)
-    ana_fee: Decimal = Decimal(0)
-    emoluments: Decimal = Decimal(0)
-    operational_fee: Decimal = Decimal(0)
-    execution: Decimal = Decimal(0)
-    custody_fee: Decimal = Decimal(0)
-    taxes: Decimal = Decimal(0)
-    irrf: Decimal = Decimal(0)
-    other_fees: Decimal = Decimal(0)
-    depositary_fee: Decimal = Decimal(0)
+
+    @model_validator(mode="after")
+    def _validate_fields_by_type(self) -> "ManualTransactionCreate":
+        t = self.transaction_type
+        if t in ("BUY", "SELL"):
+            if not self.quantity or self.quantity <= 0:
+                raise ValueError("quantity is required and must be positive for BUY/SELL")
+            if not self.price or self.price <= 0:
+                raise ValueError("price is required and must be positive for BUY/SELL")
+        elif t in ("GROUPING", "SPLITTING"):
+            if not self.ratio_from or self.ratio_from <= 0:
+                raise ValueError("ratio_from is required and must be positive for GROUPING/SPLITTING")
+            if not self.ratio_to or self.ratio_to <= 0:
+                raise ValueError("ratio_to is required and must be positive for GROUPING/SPLITTING")
+        elif t == "BONUS":
+            if not self.quantity or self.quantity <= 0:
+                raise ValueError("quantity is required and must be positive for BONUS")
+        return self
 
 
-class ManualTransactionOut(BaseModel):
+class ManualTransactionOut(FeeFieldsSchema):
     id: str
     ticker: str
     trade_date: date
@@ -120,18 +130,6 @@ class ManualTransactionOut(BaseModel):
     price: Decimal | None
     ratio_from: int | None
     ratio_to: int | None
-    settlement_fee: Decimal
-    registration_fee: Decimal
-    term_fee: Decimal
-    ana_fee: Decimal
-    emoluments: Decimal
-    operational_fee: Decimal
-    execution: Decimal
-    custody_fee: Decimal
-    taxes: Decimal
-    irrf: Decimal
-    other_fees: Decimal
-    depositary_fee: Decimal
     created_at: str
 
 
@@ -170,6 +168,7 @@ class MonthlyTaxReport(BaseModel):
     total_tax_due: Decimal
     amount_paid: Decimal | None = None   # None = not marked as paid
     payment_diverges: bool = False       # True if amount_paid != total_tax_due
+    cached_at: datetime | None = None    # set when served from cache
 
 
 class TaxPaymentOut(BaseModel):

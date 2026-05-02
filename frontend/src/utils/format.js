@@ -1,0 +1,31 @@
+export const formatDate = (iso) => {
+  if (!iso) return '—'
+  const [y, m, d] = iso.split('T')[0].split('-')
+  return `${d}/${m}/${y}`
+}
+
+export const formatDatetime = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+
+export const formatCurrency = (v) =>
+  Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+export const pnlClass = (v) =>
+  Number(v) > 0 ? 'text-emerald-600' : Number(v) < 0 ? 'text-red-500' : ''
+
+export const assetTypeClass = (type) => {
+  switch (type) {
+    case 'STOCK':      return 'text-blue-700 border-blue-200 bg-blue-50'
+    case 'FII':        return 'text-emerald-700 border-emerald-200 bg-emerald-50'
+    case 'BDR':        return 'text-purple-700 border-purple-200 bg-purple-50'
+    case 'ETF_RV':     return 'text-indigo-700 border-indigo-200 bg-indigo-50'
+    case 'SUBSCRICAO': return 'text-orange-700 border-orange-200 bg-orange-50'
+    case 'ETF_RF':
+    case 'RF_POS':
+    case 'RF_PRE':     return 'text-slate-600 border-slate-200 bg-slate-50'
+    default:           return ''
+  }
+}

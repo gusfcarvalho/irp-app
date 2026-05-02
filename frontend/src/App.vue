@@ -12,6 +12,16 @@
 
         <nav class="flex items-center gap-1 ml-2">
           <RouterLink
+            to="/dashboard"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            :class="route.path === '/dashboard'
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted'"
+          >
+            <LayoutDashboard class="h-3.5 w-3.5" />
+            Dashboard
+          </RouterLink>
+          <RouterLink
             to="/import"
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
             :class="route.path === '/import'
@@ -93,7 +103,7 @@
 
 <script setup>
 import { useRoute, RouterLink, RouterView } from 'vue-router'
-import { BarChart2, BookOpen, FileText, PenLine, Receipt, Tags, TrendingUp, Upload } from 'lucide-vue-next'
+import { BarChart2, BookOpen, FileText, LayoutDashboard, PenLine, Receipt, Tags, TrendingUp, Upload } from 'lucide-vue-next'
 
 const route = useRoute()
 </script>

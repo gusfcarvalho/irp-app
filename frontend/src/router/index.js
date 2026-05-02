@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import DashboardView from '@/views/DashboardView.vue'
 import ImportView from '@/views/ImportView.vue'
 import ImpostosView from '@/views/ImpostosView.vue'
 import NotasView from '@/views/NotasView.vue'
@@ -8,7 +9,8 @@ import TickersView from '@/views/TickersView.vue'
 import TransacoesView from '@/views/TransacoesView.vue'
 
 const routes = [
-  { path: '/', redirect: '/import' },
+  { path: '/', redirect: '/dashboard' },
+  { path: '/dashboard', component: DashboardView },
   { path: '/import', component: ImportView },
   { path: '/notas', component: NotasView },
   { path: '/transacoes', component: TransacoesView },

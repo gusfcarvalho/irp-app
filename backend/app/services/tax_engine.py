@@ -19,11 +19,11 @@ from calendar import monthrange
 from collections import defaultdict
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal
 
 from sqlmodel import Session, select
 
 from app.models.db_models import ManualTransaction, TickerClassification, Upload
+from app.models.enums import AssetType
 from app.models.schemas import AssetTaxReport, ClosedPositionTaxOut, MonthlyTaxReport
 from app.services.position_engine import build_txns_with_fees, compute_positions_with_steps
 
@@ -31,19 +31,16 @@ _ZERO = Decimal(0)
 _TWO_DP = Decimal("0.01")
 _EXEMPT_THRESHOLD = Decimal("20000")
 
-# All recognised asset types
-AssetType = Literal["STOCK", "FII", "BDR", "ETF_RV", "ETF_RF", "SUBSCRICAO", "RF_POS", "RF_PRE"]
-
 # Tax-calculation bucket: maps asset type → report section (None = skip entirely)
 _TAX_BUCKET: dict[str, str | None] = {
-    "STOCK":     "STOCK",
-    "FII":       "FII",
-    "BDR":       "BDR",
-    "ETF_RV":    "BDR",   # same rules as BDR
-    "SUBSCRICAO": "BDR",  # same rules as BDR
-    "ETF_RF":    None,    # fixed-income ETF — no tax
-    "RF_POS":    None,
-    "RF_PRE":    None,
+    AssetType.STOCK:     "STOCK",
+    AssetType.FII:       "FII",
+    AssetType.BDR:       "BDR",
+    AssetType.ETF_RV:    "BDR",   # same rules as BDR
+    AssetType.SUBSCRICAO: "BDR",  # same rules as BDR
+    AssetType.ETF_RF:    None,    # fixed-income ETF — tax due on source (no tax report here)
+    AssetType.RF_POS:    None,    # fixed-income products - tax due on source (no tax here)
+    AssetType.RF_PRE:    None,    # fixed-income products - tax due on source (no tax here)
 }
 
 _ASSET_TYPES: tuple[str, ...] = ("STOCK", "BDR", "FII")
@@ -57,10 +54,10 @@ def classify_ticker(ticker: str, overrides: dict[str, str] | None = None) -> str
     if overrides and t in overrides:
         return overrides[t]
     if t.endswith("11"):
-        return "FII"
+        return AssetType.FII
     if _BDR_SUFFIX.search(t):
-        return "BDR"
-    return "STOCK"
+        return AssetType.BDR
+    return AssetType.STOCK
 
 
 def load_classification_overrides(session: Session) -> dict[str, str]:
