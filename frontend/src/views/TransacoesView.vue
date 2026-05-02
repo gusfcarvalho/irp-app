@@ -59,8 +59,18 @@
               <td class="px-4 py-3 tabular-nums text-muted-foreground">
                 {{ formatDate(txn.trade_date) }}
               </td>
-              <td class="px-4 py-3 font-semibold font-mono">
-                {{ txn.ticker }}
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-semibold font-mono">{{ txn.ticker }}</span>
+                  <select
+                    :value="classifications[txn.ticker] ?? autoClassify(txn.ticker)"
+                    class="text-xs rounded border border-input bg-background px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
+                    :class="assetTypeClass(classifications[txn.ticker] ?? autoClassify(txn.ticker))"
+                    @change="setAssetType(txn.ticker, $event.target.value)"
+                  >
+                    <option v-for="opt in assetTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                </div>
               </td>
               <td class="px-4 py-3 text-center">
                 <Badge :variant="getTypeVariant(txn.transaction_type)">
@@ -341,8 +351,51 @@ import Badge from '@/components/ui/Badge.vue'
 import Card from '@/components/ui/Card.vue'
 
 const transactions = ref([])
+const classifications = ref({})  // ticker → asset_type override
 const loading = ref(false)
 const error = ref('')
+
+const assetTypeOptions = [
+  { value: 'STOCK',      label: 'Ações' },
+  { value: 'FII',        label: 'FII' },
+  { value: 'BDR',        label: 'BDR' },
+  { value: 'ETF_RV',     label: 'ETF RV' },
+  { value: 'SUBSCRICAO', label: 'Subscrição' },
+  { value: 'ETF_RF',     label: 'ETF RF' },
+  { value: 'RF_POS',     label: 'RF Pós' },
+  { value: 'RF_PRE',     label: 'RF Pré' },
+]
+
+const autoClassify = (ticker) => {
+  const t = ticker.toUpperCase()
+  if (t.endsWith('11')) return 'FII'
+  if (/3[2-9]$/.test(t)) return 'BDR'
+  return 'STOCK'
+}
+
+const assetTypeClass = (type) => {
+  switch (type) {
+    case 'STOCK':      return 'text-blue-700 border-blue-200 bg-blue-50'
+    case 'FII':        return 'text-emerald-700 border-emerald-200 bg-emerald-50'
+    case 'BDR':        return 'text-purple-700 border-purple-200 bg-purple-50'
+    case 'ETF_RV':     return 'text-indigo-700 border-indigo-200 bg-indigo-50'
+    case 'SUBSCRICAO': return 'text-orange-700 border-orange-200 bg-orange-50'
+    default:           return 'text-slate-600 border-slate-200 bg-slate-50'
+  }
+}
+
+const setAssetType = async (ticker, assetType) => {
+  try {
+    await fetch(`/api/ticker-classifications/${ticker}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asset_type: assetType }),
+    })
+    classifications.value[ticker] = assetType
+  } catch (e) {
+    error.value = e.message
+  }
+}
 const saving = ref(false)
 const showForm = ref(false)
 const editingId = ref(null)
@@ -401,9 +454,16 @@ const load = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await fetch('/api/manual-transactions')
-    if (!res.ok) throw new Error(`Erro ${res.status}`)
-    transactions.value = await res.json()
+    const [txnRes, clsRes] = await Promise.all([
+      fetch('/api/manual-transactions'),
+      fetch('/api/ticker-classifications'),
+    ])
+    if (!txnRes.ok) throw new Error(`Erro ${txnRes.status}`)
+    transactions.value = await txnRes.json()
+    if (clsRes.ok) {
+      const cls = await clsRes.json()
+      classifications.value = Object.fromEntries(cls.map(c => [c.ticker, c.asset_type]))
+    }
   } catch (e) {
     error.value = e.message
   } finally {

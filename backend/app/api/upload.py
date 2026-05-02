@@ -1,14 +1,22 @@
 import logging
 import os
+import re
+from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from sqlmodel import Session, select
 
 from app.db import engine
-from app.models.db_models import Transaction, Upload
+from app.models.db_models import TickerAlias, Transaction, Upload
 from app.models.schemas import TransactionOut, UploadOut, UploadResponse
 from app.services.parsers.btg_adapter import BTGParserAdapter
+
+_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{2,4}\d{1,2}$")
+
+
+def _normalize_raw(s: str) -> str:
+    return " ".join(s.split()).upper()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["importer"])
@@ -17,7 +25,10 @@ parser = BTGParserAdapter()
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
+async def upload_pdf(
+    file: UploadFile = File(...),
+    password: str | None = Form(None),
+) -> UploadResponse:
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
@@ -31,9 +42,9 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
     upload.stored_path = str(target)
 
     try:
-        result = parser.parse(str(target))
+        result = parser.parse(str(target), password=password)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {exc}") from exc
+        raise HTTPException(status_code=400, detail=str(exc) or f"Failed to parse PDF: {type(exc).__name__}") from exc
 
     with Session(engine) as session:
         if result.note_number is not None:
@@ -62,16 +73,36 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
         session.add(upload)
         session.flush()
 
+        pending_aliases: list[str] = []
         for trade in result.trades:
             if trade.quantity == 0:
                 logger.warning(
                     "PDF %s (nota %s): parsed trade with quantity=0 — ticker=%s date=%s side=%s price=%s",
                     file.filename, result.note_number, trade.ticker, trade.trade_date, trade.side, trade.price,
                 )
+
+            ticker = trade.ticker
+            if not _TICKER_RE.match(ticker.upper().strip()):
+                raw_name = _normalize_raw(ticker)
+                alias = session.get(TickerAlias, raw_name)
+                if alias and alias.confirmed and alias.ticker:
+                    ticker = alias.ticker
+                    logger.info("Alias resolved %r → %r", raw_name, ticker)
+                else:
+                    if alias is None:
+                        alias = TickerAlias(raw_name=raw_name)
+                        session.add(alias)
+                    elif alias.ticker:
+                        # Pre-fill suggested ticker from Yahoo if previously cached
+                        pass
+                    ticker = raw_name
+                    if raw_name not in pending_aliases:
+                        pending_aliases.append(raw_name)
+
             session.add(
                 Transaction(
                     upload_id=upload.id,
-                    ticker=trade.ticker,
+                    ticker=ticker,
                     trade_date=trade.trade_date,
                     side=trade.side,
                     quantity=trade.quantity,
@@ -87,6 +118,7 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
         id=upload.id,
         filename=upload.filename,
         transactions_created=len(result.trades),
+        pending_aliases=pending_aliases,
     )
 
 

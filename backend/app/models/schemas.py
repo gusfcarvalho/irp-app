@@ -37,6 +37,24 @@ class UploadResponse(BaseModel):
     id: str
     filename: str
     transactions_created: int
+    pending_aliases: list[str] = []
+
+
+class TickerAliasOut(BaseModel):
+    raw_name: str
+    ticker: str | None
+    confirmed: bool
+    created_at: str
+    updated_at: str
+
+
+class TickerAliasPatch(BaseModel):
+    ticker: str
+
+
+class TickerAliasCreate(BaseModel):
+    raw_name: str
+    ticker: str
 
 
 class TransactionOut(BaseModel):
@@ -115,3 +133,52 @@ class ManualTransactionOut(BaseModel):
     other_fees: Decimal
     depositary_fee: Decimal
     created_at: str
+
+
+class ClosedPositionTaxOut(BaseModel):
+    ticker: str
+    asset_type: str         # "STOCK" | "BDR" | "FII"
+    direction: str          # "LONG" | "SHORT"
+    close_date: date
+    quantity: int
+    open_mean_price: Decimal
+    close_price: Decimal
+    realized_pnl: Decimal
+
+
+class AssetTaxReport(BaseModel):
+    asset_type: str
+    total_sold_value: Decimal
+    profit_loss: Decimal
+    accumulated_loss_before: Decimal  # loss carried in from prior months
+    accumulated_loss_applied: Decimal  # portion used to offset this month's profit
+    accumulated_loss_after: Decimal   # remaining loss to carry forward
+    taxable_profit: Decimal           # profit after applying accumulated loss
+    irrf_withheld: Decimal
+    tax_rate: Decimal
+    gross_tax: Decimal
+    tax_due: Decimal
+    exempt: bool
+    closed_positions: list[ClosedPositionTaxOut]
+
+
+class MonthlyTaxReport(BaseModel):
+    month: str              # "YYYY-MM"
+    stocks: AssetTaxReport
+    bdr: AssetTaxReport
+    fii: AssetTaxReport
+    total_tax_due: Decimal
+    amount_paid: Decimal | None = None   # None = not marked as paid
+    payment_diverges: bool = False       # True if amount_paid != total_tax_due
+
+
+class TaxPaymentOut(BaseModel):
+    month: str
+    amount_paid: Decimal
+    paid_at: str
+    notes: str | None
+
+
+class TaxPaymentUpsert(BaseModel):
+    amount_paid: Decimal
+    notes: str | None = None

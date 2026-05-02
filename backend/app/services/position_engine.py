@@ -220,11 +220,25 @@ def compute_positions_with_steps(
                     ).quantize(_QUANTIZE, rounding=ROUND_HALF_UP)
                     new_open_date = curr_open_date or txn.trade_date
                 elif new_qty < 0:
-                    # Partially covering short; mean and open_date unchanged
+                    # Partial short cover: realizes P&L on the covered qty; mean unchanged
+                    closed_qty = txn.quantity
+                    pnl = (curr_mean - adj) * closed_qty
+                    closed_positions.append(ClosedPosition(
+                        ticker=txn.ticker,
+                        direction="SHORT",
+                        open_date=curr_open_date,
+                        close_date=txn.trade_date,
+                        quantity=closed_qty,
+                        open_mean_price=curr_mean,
+                        close_price=adj,
+                        realized_pnl=pnl.quantize(_QUANTIZE, rounding=ROUND_HALF_UP),
+                    ))
+                    closes_quantity = closed_qty
+                    realized_pnl = pnl.quantize(_QUANTIZE, rounding=ROUND_HALF_UP)
                     new_mean = curr_mean
                     new_open_date = curr_open_date
                 else:
-                    # Short position closed (new_qty == 0) or crossed into long (new_qty > 0)
+                    # Short position fully closed (new_qty == 0) or crossed into long (new_qty > 0)
                     closed_qty = abs(curr_qty)
                     pnl = (curr_mean - adj) * closed_qty
                     closed_positions.append(ClosedPosition(
@@ -255,11 +269,25 @@ def compute_positions_with_steps(
                     ).quantize(_QUANTIZE, rounding=ROUND_HALF_UP)
                     new_open_date = curr_open_date or txn.trade_date
                 elif new_qty > 0:
-                    # Partial long sell; mean and open_date unchanged
+                    # Partial long sell: realizes P&L on the sold qty; mean unchanged
+                    closed_qty = txn.quantity
+                    pnl = (adj - curr_mean) * closed_qty
+                    closed_positions.append(ClosedPosition(
+                        ticker=txn.ticker,
+                        direction="LONG",
+                        open_date=curr_open_date,
+                        close_date=txn.trade_date,
+                        quantity=closed_qty,
+                        open_mean_price=curr_mean,
+                        close_price=adj,
+                        realized_pnl=pnl.quantize(_QUANTIZE, rounding=ROUND_HALF_UP),
+                    ))
+                    closes_quantity = closed_qty
+                    realized_pnl = pnl.quantize(_QUANTIZE, rounding=ROUND_HALF_UP)
                     new_mean = curr_mean
                     new_open_date = curr_open_date
                 else:
-                    # Long position closed (new_qty == 0) or crossed into short (new_qty < 0)
+                    # Long position fully closed (new_qty == 0) or crossed into short (new_qty < 0)
                     closed_qty = curr_qty
                     pnl = (adj - curr_mean) * closed_qty
                     closed_positions.append(ClosedPosition(

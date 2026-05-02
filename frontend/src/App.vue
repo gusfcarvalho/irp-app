@@ -61,6 +61,26 @@
             <TrendingUp class="h-3.5 w-3.5" />
             Resultados
           </RouterLink>
+          <RouterLink
+            to="/impostos"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            :class="route.path === '/impostos'
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted'"
+          >
+            <Receipt class="h-3.5 w-3.5" />
+            Impostos
+          </RouterLink>
+          <RouterLink
+            to="/tickers"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            :class="route.path === '/tickers'
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted'"
+          >
+            <Tags class="h-3.5 w-3.5" />
+            Tickers
+          </RouterLink>
         </nav>
       </div>
     </header>
@@ -73,7 +93,7 @@
 
 <script setup>
 import { useRoute, RouterLink, RouterView } from 'vue-router'
-import { BarChart2, BookOpen, FileText, PenLine, TrendingUp, Upload } from 'lucide-vue-next'
+import { BarChart2, BookOpen, FileText, PenLine, Receipt, Tags, TrendingUp, Upload } from 'lucide-vue-next'
 
 const route = useRoute()
 </script>

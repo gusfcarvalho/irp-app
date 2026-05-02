@@ -66,17 +66,34 @@
           <table class="w-full text-sm">
             <thead>
               <tr class="bg-muted/40 border-b">
-                <th class="px-4 py-3 text-left font-medium text-muted-foreground">Ticker</th>
-                <th class="px-4 py-3 text-right font-medium text-muted-foreground">Qtd</th>
-                <th class="px-4 py-3 text-right font-medium text-muted-foreground">PM Calculado</th>
+                <th class="px-4 py-3 text-left font-medium text-muted-foreground">
+                  <button type="button" class="flex items-center gap-1 hover:text-foreground transition-colors" @click="toggleSort('ticker')">
+                    Ticker <SortIcon field="ticker" :sort-by="sortBy" :sort-dir="sortDir" />
+                  </button>
+                </th>
+                <th class="px-4 py-3 text-left font-medium text-muted-foreground">Tipo</th>
+                <th class="px-4 py-3 text-right font-medium text-muted-foreground">
+                  <button type="button" class="flex items-center gap-1 ml-auto hover:text-foreground transition-colors" @click="toggleSort('qty')">
+                    Qtd <SortIcon field="qty" :sort-by="sortBy" :sort-dir="sortDir" />
+                  </button>
+                </th>
+                <th class="px-4 py-3 text-right font-medium text-muted-foreground">
+                  <button type="button" class="flex items-center gap-1 ml-auto hover:text-foreground transition-colors" @click="toggleSort('pm')">
+                    PM Calculado <SortIcon field="pm" :sort-by="sortBy" :sort-dir="sortDir" />
+                  </button>
+                </th>
                 <th class="px-4 py-3 text-right font-medium text-muted-foreground">PM Efetivo</th>
-                <th class="px-4 py-3 text-right font-medium text-muted-foreground">Custo total</th>
+                <th class="px-4 py-3 text-right font-medium text-muted-foreground">
+                  <button type="button" class="flex items-center gap-1 ml-auto hover:text-foreground transition-colors" @click="toggleSort('total')">
+                    Custo total <SortIcon field="total" :sort-by="sortBy" :sort-dir="sortDir" />
+                  </button>
+                </th>
                 <th class="px-4 py-3 text-center font-medium text-muted-foreground">Ajuste</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="pos in positions"
+                v-for="pos in sortedPositions"
                 :key="pos.ticker"
                 class="border-b last:border-0 hover:bg-muted/20 transition-colors"
               >
@@ -87,6 +104,16 @@
                       manual
                     </Badge>
                   </div>
+                </td>
+                <td class="px-4 py-3">
+                  <select
+                    :value="pos.asset_type"
+                    class="text-xs rounded border border-input bg-background px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
+                    :class="assetTypeClass(pos.asset_type)"
+                    @change="setAssetType(pos.ticker, $event.target.value)"
+                  >
+                    <option v-for="opt in assetTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
                 </td>
                 <td class="px-4 py-3 text-right tabular-nums">
                   {{ pos.effective_quantity.toLocaleString('pt-BR') }}
@@ -303,10 +330,21 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { AlertTriangle, Inbox as InboxIcon, Loader2, Pencil, RotateCcw, X } from 'lucide-vue-next'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Inbox as InboxIcon, Loader2, Pencil, RotateCcw, X } from 'lucide-vue-next'
 import Alert from '@/components/ui/Alert.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Card from '@/components/ui/Card.vue'
+
+// Inline sort-indicator component
+const SortIcon = {
+  props: ['field', 'sortBy', 'sortDir'],
+  components: { ArrowUp, ArrowDown, ArrowUpDown },
+  template: `
+    <ArrowUp v-if="sortBy === field && sortDir === 'asc'" class="h-3 w-3 shrink-0" />
+    <ArrowDown v-else-if="sortBy === field && sortDir === 'desc'" class="h-3 w-3 shrink-0" />
+    <ArrowUpDown v-else class="h-3 w-3 shrink-0 opacity-30" />
+  `,
+}
 
 const positions = ref([])
 const loading = ref(false)
@@ -353,6 +391,44 @@ const stepLabel = (side) => {
   }
 }
 
+const assetTypeOptions = [
+  { value: 'STOCK',      label: 'Ações' },
+  { value: 'FII',        label: 'FII' },
+  { value: 'BDR',        label: 'BDR' },
+  { value: 'ETF_RV',     label: 'ETF RV' },
+  { value: 'SUBSCRICAO', label: 'Subscrição' },
+  { value: 'ETF_RF',     label: 'ETF RF' },
+  { value: 'RF_POS',     label: 'RF Pós' },
+  { value: 'RF_PRE',     label: 'RF Pré' },
+]
+
+const assetTypeClass = (type) => {
+  switch (type) {
+    case 'STOCK':      return 'text-blue-700 border-blue-200 bg-blue-50'
+    case 'FII':        return 'text-emerald-700 border-emerald-200 bg-emerald-50'
+    case 'BDR':        return 'text-purple-700 border-purple-200 bg-purple-50'
+    case 'ETF_RV':     return 'text-indigo-700 border-indigo-200 bg-indigo-50'
+    case 'SUBSCRICAO': return 'text-orange-700 border-orange-200 bg-orange-50'
+    case 'ETF_RF':     return 'text-slate-600 border-slate-200 bg-slate-50'
+    case 'RF_POS':     return 'text-slate-600 border-slate-200 bg-slate-50'
+    case 'RF_PRE':     return 'text-slate-600 border-slate-200 bg-slate-50'
+    default:           return ''
+  }
+}
+
+const setAssetType = async (ticker, assetType) => {
+  try {
+    await fetch(`/api/ticker-classifications/${ticker}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asset_type: assetType }),
+    })
+    await load()
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
 const openBreakdown = async (pos) => {
   breakdownTicker.value = pos.ticker
   breakdownSteps.value = []
@@ -384,6 +460,35 @@ const totalPatrimony = computed(() =>
     0,
   ),
 )
+
+const sortBy = ref('ticker')
+const sortDir = ref('asc')
+
+const toggleSort = (field) => {
+  if (sortBy.value === field) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = field
+    sortDir.value = 'asc'
+  }
+}
+
+const sortedPositions = computed(() => {
+  const list = [...positions.value]
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  return list.sort((a, b) => {
+    switch (sortBy.value) {
+      case 'ticker': return dir * a.ticker.localeCompare(b.ticker)
+      case 'qty':    return dir * (a.effective_quantity - b.effective_quantity)
+      case 'pm':     return dir * (Number(a.computed_mean_price) - Number(b.computed_mean_price))
+      case 'total':  return dir * (
+        a.effective_quantity * Number(a.effective_mean_price) -
+        b.effective_quantity * Number(b.effective_mean_price)
+      )
+      default: return 0
+    }
+  })
+})
 
 const formatCurrency = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })

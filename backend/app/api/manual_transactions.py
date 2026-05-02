@@ -61,6 +61,7 @@ def _to_out(txn: ManualTransaction) -> ManualTransactionOut:
         taxes=txn.taxes,
         irrf=txn.irrf,
         other_fees=txn.other_fees,
+        depositary_fee=txn.depositary_fee,
         created_at=txn.created_at.isoformat(),
     )
 

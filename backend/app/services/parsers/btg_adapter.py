@@ -32,6 +32,7 @@ class ParseResult:
 
 try:
     from correpy.parsers.brokerage_notes.parser_factory import ParserFactory
+    from correpy.parsers.exceptions import InvalidPasswordException
     import correpy.parsers.brokerage_notes.base_parser as _correpy_base_parser
 
     # correpy's AMOUNT_STRUCTURE_REGEX only handles up to 3-digit standalone integers
@@ -49,8 +50,11 @@ try:
     _correpy_base_parser.extract_amount_from_line = _patched_extract_amount_from_line  # type: ignore[attr-defined]
     _CORREPY_AVAILABLE = True
 except ImportError:
-    ParserFactory = None  # type: ignore[assignment,misc]
+    ParserFactory = None          # type: ignore[assignment,misc]
+    InvalidPasswordException = Exception  # type: ignore[assignment,misc]
     _CORREPY_AVAILABLE = False
+
+_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{2,4}\d{1,2}$")
 
 LINE_RE = re.compile(
     r"(?P<date>\d{2}/\d{2}/\d{4}).*?\b(?P<side>C|V)\b\s+(?P<ticker>[A-Z]{4}\d{1,2}|[A-Z]{5}\d{1,2})\s+(?P<qty>\d+)\s+(?P<price>\d+[\.,]\d{2})"
@@ -94,14 +98,28 @@ class BTGParserAdapter:
     Errors are always printed so failures are visible.
     """
 
-    def parse(self, pdf_path: str) -> ParseResult:
+    def parse(self, pdf_path: str, password: str | None = None) -> ParseResult:
         """Parse a PDF and return a ParseResult with note_number, trades, and fees."""
         if not _CORREPY_AVAILABLE:
             print("[btg_adapter] correpy not installed, using regex fallback")
-            return ParseResult(note_number=None, trades=self._parse_with_regex_fallback(pdf_path))
+            return ParseResult(note_number=None, trades=self._parse_with_regex_fallback(pdf_path, password=password))
 
         pdf_bytes = Path(pdf_path).read_bytes()
-        notes = ParserFactory(brokerage_note=io.BytesIO(pdf_bytes)).parse()
+
+        try:
+            notes = ParserFactory(
+                brokerage_note=io.BytesIO(pdf_bytes),
+                password=password,
+            ).parse()
+        except InvalidPasswordException:
+            hint = " (dica: notas da Clear enviadas por e-mail usam o CPF como senha)" if password is None else ""
+            raise ValueError(f"PDF protegido por senha — forneça a senha no campo correspondente{hint}")
+        except Exception as exc:
+            logger.warning(
+                "correpy falhou (%s: %s) — usando fallback regex", type(exc).__name__, exc
+            )
+            return ParseResult(note_number=None, trades=self._parse_with_regex_fallback(pdf_path, password=password))
+
         print(f"[btg_adapter] correpy returned {len(notes)} brokerage note(s)")
 
         note_numbers: list[str] = []
@@ -127,11 +145,16 @@ class BTGParserAdapter:
                 # only recognises standard B3 suffixes (2,3,4,5,6,11,12), so non-standard
                 # tickers like AZUL54F get truncated to AZUL5 by the ticker extractor.
                 raw_name = txn.security.name or ""
-                raw_ticker = raw_name.split()[0] if raw_name else txn.security.ticker
-                ticker = raw_ticker or raw_name
+                first_word = raw_name.split()[0] if raw_name else txn.security.ticker or ""
+                # If first word looks like a valid B3 ticker, use it; otherwise
+                # keep the full description so the alias UI shows the complete name.
+                if first_word and _TICKER_RE.match(first_word.upper()):
+                    ticker = first_word
+                else:
+                    ticker = raw_name or txn.security.ticker or ""
 
                 if txn.security.ticker and txn.security.ticker != ticker:
-                    logger.warning(
+                    logger.debug(
                         "correpy ticker %r from name %r; using %r",
                         txn.security.ticker, raw_name, ticker,
                     )
@@ -149,15 +172,20 @@ class BTGParserAdapter:
                 )
 
         if not trades:
-            print("[btg_adapter] correpy returned 0 trades — check PDF format")
+            print("[btg_adapter] correpy returned 0 trades — trying regex fallback")
+            fallback = self._parse_with_regex_fallback(pdf_path, password=password)
+            if fallback:
+                print(f"[btg_adapter] regex fallback found {len(fallback)} trades")
+                return ParseResult(note_number=None, trades=fallback)
+            print("[btg_adapter] regex fallback also found 0 trades")
 
         # Correct prices for non-unit lot sizes (e.g. debentures traded in lots of 10,000)
-        trades = self._correct_lot_sizes(pdf_path, trades)
+        trades = self._correct_lot_sizes(pdf_path, trades, password=password)
 
         # Infer Taxa Depositária (not in correpy) via:
         #   depositary_fee = ops_value − settlement_fee − registration_fee − Total CBLC
         result.depositary_fee = self._infer_depositary_fee(
-            pdf_path, trades, result.settlement_fee, result.registration_fee
+            pdf_path, trades, result.settlement_fee, result.registration_fee, password=password
         )
         if result.depositary_fee:
             print(f"[btg_adapter] depositary_fee={result.depositary_fee}")
@@ -166,7 +194,7 @@ class BTGParserAdapter:
         result.trades = trades
         return result
 
-    def _correct_lot_sizes(self, pdf_path: str, trades: list[Trade]) -> list[Trade]:
+    def _correct_lot_sizes(self, pdf_path: str, trades: list[Trade], password: str | None = None) -> list[Trade]:
         """Detect non-unit lot sizes by cross-referencing the 'Resumo dos Negócios' section.
 
         When a security is traded in lots of 100 or 10,000, correpy reports the per-lot
@@ -174,7 +202,7 @@ class BTGParserAdapter:
         the gross total reported on the nota and divide the price accordingly so the stored
         price always reflects the per-share/per-unit value.
         """
-        resumo = self._extract_resumo_totals(pdf_path)
+        resumo = self._extract_resumo_totals(pdf_path, password=password)
         if not resumo:
             return trades
 
@@ -202,7 +230,7 @@ class BTGParserAdapter:
             corrected.append(trade)
         return corrected
 
-    def _extract_resumo_totals(self, pdf_path: str) -> dict[tuple[int, Decimal], tuple[Decimal, int]]:
+    def _extract_resumo_totals(self, pdf_path: str, password: str | None = None) -> dict[tuple[int, Decimal], tuple[Decimal, int]]:
         """Scan the full PDF text for trade lines and return (qty, unit_price) → (gross_total, lot_size).
 
         Does not require a specific section header — any line whose trailing columns match
@@ -210,6 +238,8 @@ class BTGParserAdapter:
         lot size is in {1, 100, 10 000} and is != 1 are kept (unit-lot trades don't need fixing).
         """
         reader = PdfReader(str(pdf_path))
+        if password and reader.is_encrypted:
+            reader.decrypt(password)
         text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
         result: dict[tuple[int, Decimal], tuple[Decimal, int]] = {}
@@ -246,6 +276,7 @@ class BTGParserAdapter:
         trades: list[Trade],
         settlement_fee: Decimal,
         registration_fee: Decimal,
+        password: str | None = None,
     ) -> Decimal:
         """Determine Taxa de Transferência de Ativos (depositary fee).
 
@@ -254,6 +285,8 @@ class BTGParserAdapter:
         Fallback: read the 'Taxa de Transferência de Ativos' label directly from the PDF.
         """
         reader = PdfReader(str(pdf_path))
+        if password and reader.is_encrypted:
+            reader.decrypt(password)
         text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
         # --- primary: CBLC inference ---
@@ -305,9 +338,11 @@ class BTGParserAdapter:
         except InvalidOperation:
             return None
 
-    def _parse_with_regex_fallback(self, pdf_path: str) -> list[Trade]:  # noqa: D102
+    def _parse_with_regex_fallback(self, pdf_path: str, password: str | None = None) -> list[Trade]:
         path = Path(pdf_path)
         reader = PdfReader(str(path))
+        if password and reader.is_encrypted:
+            reader.decrypt(password)
         text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
         trades: list[Trade] = []

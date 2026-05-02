@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 from app.db import engine
 from app.models.db_models import Position
 from app.services.position_engine import build_txns_with_fees, compute_positions, compute_positions_with_steps
+from app.services.tax_engine import classify_ticker, load_classification_overrides
 
 router = APIRouter(tags=["positions"])
 
@@ -33,6 +34,7 @@ class PositionOut(BaseModel):
     effective_quantity: int
     effective_mean_price: Decimal
     is_overridden: bool
+    asset_type: str
 
 
 class PositionPatch(BaseModel):
@@ -53,7 +55,7 @@ class TradeStepOut(BaseModel):
     realized_pnl: Decimal | None = None
 
 
-def _to_out(pos: Position, computed: dict) -> PositionOut:
+def _to_out(pos: Position, computed: dict, overrides: dict | None = None) -> PositionOut:
     cp = computed.get(pos.ticker)
     comp_qty = cp.quantity if cp else 0
     comp_mean = cp.mean_price if cp else Decimal(0)
@@ -68,6 +70,7 @@ def _to_out(pos: Position, computed: dict) -> PositionOut:
         effective_quantity=eff_qty,
         effective_mean_price=eff_mean,
         is_overridden=pos.manual_mean_price is not None or pos.manual_quantity is not None,
+        asset_type=classify_ticker(pos.ticker, overrides),
     )
 
 
@@ -76,6 +79,7 @@ def recalculate_positions() -> list[PositionOut]:
     with Session(engine) as session:
         txns, corp_actions = build_txns_with_fees(session)
         computed = compute_positions(txns, corp_actions)
+        overrides = load_classification_overrides(session)
 
         existing: dict[str, Position] = {
             p.ticker: p for p in session.exec(select(Position)).all()
@@ -91,7 +95,7 @@ def recalculate_positions() -> list[PositionOut]:
         session.commit()
 
         all_positions = session.exec(select(Position)).all()
-        return [_to_out(p, computed) for p in all_positions]
+        return [_to_out(p, computed, overrides) for p in all_positions]
 
 
 @router.get("/positions", response_model=list[PositionOut])
@@ -101,6 +105,7 @@ def list_positions(
     with Session(engine) as session:
         txns, corp_actions = build_txns_with_fees(session, as_of_date=as_of)
         computed = compute_positions(txns, corp_actions)
+        overrides = load_classification_overrides(session)
         all_positions = session.exec(select(Position)).all()
         tickers_in_db = {p.ticker for p in all_positions}
         for ticker, cp in computed.items():
@@ -110,7 +115,7 @@ def list_positions(
                 all_positions = list(all_positions) + [pos]
         session.commit()
         return [
-            _to_out(p, computed)
+            _to_out(p, computed, overrides)
             for p in all_positions
             if computed.get(p.ticker) and (
                 computed[p.ticker].quantity != 0
@@ -194,7 +199,8 @@ def patch_position(ticker: str, body: PositionPatch) -> PositionOut:
 
         txns, corp_actions = build_txns_with_fees(session)
         computed = compute_positions(txns, corp_actions)
-        return _to_out(pos, computed)
+        overrides = load_classification_overrides(session)
+        return _to_out(pos, computed, overrides)
 
 
 @router.delete("/positions/{ticker}/override", response_model=PositionOut)
@@ -212,4 +218,5 @@ def clear_override(ticker: str) -> PositionOut:
 
         txns, corp_actions = build_txns_with_fees(session)
         computed = compute_positions(txns, corp_actions)
-        return _to_out(pos, computed)
+        overrides = load_classification_overrides(session)
+        return _to_out(pos, computed, overrides)

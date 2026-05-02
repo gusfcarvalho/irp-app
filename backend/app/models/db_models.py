@@ -5,6 +5,30 @@ from uuid import uuid4
 from sqlmodel import Field, SQLModel
 
 
+class TaxPayment(SQLModel, table=True):
+    """Records that the user actually paid DARF for a given month."""
+    month: str = Field(primary_key=True)  # "YYYY-MM"
+    amount_paid: Decimal
+    paid_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    notes: str | None = Field(default=None)
+
+
+class TickerClassification(SQLModel, table=True):
+    """User-supplied asset-type override for a ticker."""
+    ticker: str = Field(primary_key=True)
+    asset_type: str  # STOCK | FII | BDR | ETF_RV | ETF_RF | SUBSCRICAO | RF_POS | RF_PRE
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class TickerAlias(SQLModel, table=True):
+    """Maps raw descriptions (e.g. 'AMBEV S/A ON') or old tickers to current B3 tickers."""
+    raw_name: str = Field(primary_key=True)   # normalized: " ".join(s.split()).upper()
+    ticker: str | None = Field(default=None)
+    confirmed: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class Upload(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     filename: str

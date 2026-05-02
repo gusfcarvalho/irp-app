@@ -3,7 +3,7 @@
     <div>
       <h1 class="text-2xl font-bold tracking-tight">Importar Nota de Corretagem</h1>
       <p class="text-muted-foreground text-sm mt-1">
-        Faça upload de um ou mais PDFs SINACOR (BTG) para importar suas transações.
+        Faça upload de um ou mais PDFs SINACOR (BTG, Clear, XP e outras) para importar suas transações.
       </p>
     </div>
 
@@ -84,6 +84,36 @@
         </li>
       </ul>
 
+      <!-- Optional PDF password (for encrypted notes, e.g. Clear via e-mail) -->
+      <div class="border-t pt-3">
+        <button
+          type="button"
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+          @click="showPassword = !showPassword"
+        >
+          <Lock class="h-3 w-3" />
+          PDF protegido por senha?
+          <span class="opacity-50">{{ showPassword ? '▲' : '▼' }}</span>
+        </button>
+        <div v-if="showPassword" class="mt-2 flex items-center gap-2">
+          <input
+            v-model="pdfPassword"
+            type="password"
+            placeholder="Senha (ex: CPF sem pontuação)"
+            class="h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            autocomplete="off"
+          />
+          <button
+            v-if="pdfPassword"
+            type="button"
+            class="text-xs text-muted-foreground hover:text-foreground"
+            @click="pdfPassword = ''"
+          >
+            <X class="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
       <div class="flex items-center justify-between gap-3">
         <button
           v-if="queue.length"
@@ -112,6 +142,17 @@
       <CheckCircle v-if="batchSummary.variant === 'success'" class="h-4 w-4 shrink-0 mt-0.5" />
       <AlertTriangle v-else class="h-4 w-4 shrink-0 mt-0.5" />
       <span>{{ batchSummary.message }}</span>
+    </Alert>
+
+    <!-- Pending alias alert -->
+    <Alert v-if="hasPendingAliases" variant="default" class="animate-in fade-in border-amber-300 bg-amber-50">
+      <AlertTriangle class="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+      <span class="text-amber-800">
+        Alguns tickers não foram reconhecidos automaticamente.
+        <RouterLink to="/tickers" class="underline font-medium hover:text-amber-900">
+          Confirme os tickers aqui →
+        </RouterLink>
+      </span>
     </Alert>
 
     <!-- Transactions table -->
@@ -187,12 +228,14 @@ import {
   CopyX,
   FileText,
   Loader2,
+  Lock,
   RefreshCw,
   Upload,
   UploadCloud,
   X,
   Inbox as InboxIcon,
 } from 'lucide-vue-next'
+import { RouterLink } from 'vue-router'
 import Alert from './ui/Alert.vue'
 import Badge from './ui/Badge.vue'
 import Button from './ui/Button.vue'
@@ -207,6 +250,9 @@ const uploadingIndex = ref(0)
 const loadingTx = ref(false)
 const transactions = ref([])
 const batchSummary = ref(null)
+const pdfPassword = ref('')
+const showPassword = ref(false)
+const hasPendingAliases = ref(false)
 
 // queue item: { name, size, file, status: 'pending'|'uploading'|'done'|'error'|'duplicate', txCount, error }
 const queue = ref([])
@@ -258,6 +304,7 @@ const uploadAll = async () => {
     try {
       const formData = new FormData()
       formData.append('file', item.file)
+      if (pdfPassword.value) formData.append('password', pdfPassword.value)
 
       const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData })
 
@@ -275,6 +322,9 @@ const uploadAll = async () => {
         item.status = 'done'
         done++
         totalTx += data.transactions_created
+        if (data.pending_aliases?.length) {
+          hasPendingAliases.value = true
+        }
       }
     } catch (e) {
       item.error = e.message
