@@ -24,6 +24,14 @@ export const getUploads = () => request('/uploads')
 export const getTransactions = () => request('/transactions')
 export const uploadFile = (formData) =>
   request('/upload', { method: 'POST', body: formData })
+export const deleteUpload = (id) =>
+  request(`/uploads/${id}`, { method: 'DELETE' })
+
+// ── B3 Imports ────────────────────────────────────────────────────────────────
+export const importB3Posicao = (formData) =>
+  request('/b3/posicao', { method: 'POST', body: formData })
+export const importB3Movimentacao = (formData) =>
+  request('/b3/movimentacao', { method: 'POST', body: formData })
 
 // ── Positions ─────────────────────────────────────────────────────────────────
 export const getPositions = (asOf) =>

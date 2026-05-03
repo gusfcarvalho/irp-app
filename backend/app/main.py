@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
+from app.api.b3_import import router as b3_import_router
 from app.api.dashboard import router as dashboard_router
 from app.api.manual_transactions import router as manual_transactions_router
 from app.api.positions import router as positions_router
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="IRPF SINACOR API", version="0.2.0", lifespan=lifespan)
 app.include_router(upload_router, prefix="/api")
+app.include_router(b3_import_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(positions_router, prefix="/api")
 app.include_router(quotes_router, prefix="/api")

@@ -138,8 +138,11 @@ def get_portfolio_history(
         ))
 
     # Order categories: STOCK → BDR → FII → ETF_RV → rest
-    ordered = [c for c in ("STOCK", "BDR", "FII", "ETF_RV", "ETF_RF", "SUBSCRICAO", "RF_POS", "RF_PRE")
-               if c in all_categories]
+    ordered = [c for c in (
+        "STOCK", "BDR", "FII", "ETF_RV", "ETF_RF", "SUBSCRICAO",
+        "TD", "CDB", "LCI", "LCA", "LCF", "LIG", "CRI", "CRA", "DEB",
+        "RF_POS", "RF_PRE",
+    ) if c in all_categories]
     ordered += sorted(all_categories - set(ordered))
 
     return PortfolioHistoryResponse(points=points, asset_types=ordered, last_quote_date=last_quote_date)

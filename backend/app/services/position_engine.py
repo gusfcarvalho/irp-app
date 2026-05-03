@@ -85,7 +85,7 @@ class TxnWithFees:
     trade_date: object          # datetime.date
     uploaded_at: datetime
     side: str                   # "BUY" | "SELL" | "BONUS"
-    quantity: int
+    quantity: Decimal
     raw_price: Decimal
     total_nota_fees: Decimal    # sum of non-IRRF fees for the whole nota
     nota_notional: Decimal      # sum of qty×price for all txns in the nota
@@ -106,7 +106,7 @@ class CorporateAction:
 @dataclass
 class ComputedPosition:
     ticker: str
-    quantity: int
+    quantity: Decimal
     mean_price: Decimal
 
 
@@ -117,7 +117,7 @@ class ClosedPosition:
     direction: str              # "LONG" | "SHORT" — what was closed
     open_date: object           # datetime.date — when this position segment was opened
     close_date: object          # datetime.date — trade_date of the closing transaction
-    quantity: int               # shares closed (always positive)
+    quantity: Decimal           # shares closed (always positive)
     open_mean_price: Decimal    # cost basis / avg short entry at time of close
     close_price: Decimal        # fee-adjusted price of the closing transaction
     realized_pnl: Decimal       # (close - open) × qty for LONG; (open - close) × qty for SHORT
@@ -128,13 +128,13 @@ class TradeStep:
     """One row in the custo médio history for a ticker."""
     trade_date: object          # datetime.date
     side: str                   # "BUY" | "SELL" | "BONUS" | "GROUPING" | "SPLITTING"
-    quantity: int
+    quantity: Decimal
     raw_price: Decimal
     fee_per_unit: Decimal       # allocated broker fee per share (IRRF excluded)
     adjusted_price: Decimal     # raw_price ± fee_per_unit
-    qty_after: int
+    qty_after: Decimal
     mean_price_after: Decimal   # running custo médio after this trade
-    closes_quantity: int | None = None   # shares closed by this step (set when qty crosses zero)
+    closes_quantity: Decimal | None = None   # shares closed by this step (set when qty crosses zero)
     realized_pnl: Decimal | None = None  # fee-adjusted P&L on the closed portion
 
 
@@ -190,7 +190,7 @@ def compute_positions_with_steps(
     events.sort(key=lambda e: (e[0], e[1]))
 
     # (qty, mean_price, open_date)
-    positions: dict[str, tuple[int, Decimal, object]] = {}
+    positions: dict[str, tuple[Decimal, Decimal, object]] = {}
     steps: dict[str, list[TradeStep]] = {}
     closed_positions: list[ClosedPosition] = []
 
@@ -205,9 +205,9 @@ def compute_positions_with_steps(
                 continue
             fpu = _fee_per_unit(txn).quantize(_QUANTIZE, rounding=ROUND_HALF_UP)
             adj = _adjusted_price(txn).quantize(_QUANTIZE, rounding=ROUND_HALF_UP)
-            curr_qty, curr_mean, curr_open_date = positions.get(txn.ticker, (0, _ZERO, None))
+            curr_qty, curr_mean, curr_open_date = positions.get(txn.ticker, (_ZERO, _ZERO, None))
 
-            closes_quantity: int | None = None
+            closes_quantity: Decimal | None = None
             realized_pnl: Decimal | None = None
 
             if txn.side in ("BUY", "BONUS"):
@@ -322,13 +322,12 @@ def compute_positions_with_steps(
 
         else:  # corporate action
             ca = event
-            curr_qty, curr_mean, curr_open_date = positions.get(ca.ticker, (0, _ZERO, None))
+            curr_qty, curr_mean, curr_open_date = positions.get(ca.ticker, (_ZERO, _ZERO, None))
 
             if curr_qty != 0:
-                # Apply ratio using integer arithmetic to avoid rounding issues
-                # e.g., 300 shares with 3:1 grouping -> (300 * 1) // 3 = 100
-                # Works for both long (positive) and short (negative) positions
-                new_qty = (curr_qty * ca.ratio_to) // ca.ratio_from
+                # Apply ratio: e.g., 300 shares with 3:1 grouping -> 300 * 1 / 3 = 100
+                ratio = Decimal(ca.ratio_to) / Decimal(ca.ratio_from)
+                new_qty = (curr_qty * ratio).quantize(_QUANTIZE, rounding=ROUND_HALF_UP)
                 if new_qty != 0:
                     # Adjust mean price inversely to preserve total cost basis
                     ratio = Decimal(ca.ratio_to) / Decimal(ca.ratio_from)
@@ -336,7 +335,7 @@ def compute_positions_with_steps(
                 else:
                     new_mean = _ZERO
             else:
-                new_qty = 0
+                new_qty = _ZERO
                 new_mean = _ZERO
 
             positions[ca.ticker] = (new_qty, new_mean, curr_open_date)
@@ -382,9 +381,9 @@ def build_txns_with_fees(
         u.id: u for u in session.exec(select(Upload)).all()
     }
 
-    # Load imported transactions
+    # Load imported transactions (exclude unreviewed B3 posição imports)
     nota_notionals: dict[str, Decimal] = {}
-    stmt = select(Transaction)
+    stmt = select(Transaction).where(Transaction.needs_review == False)  # noqa: E712
     if as_of_date is not None:
         stmt = stmt.where(Transaction.trade_date <= as_of_date)
     all_txns = session.exec(stmt).all()

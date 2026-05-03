@@ -23,7 +23,7 @@ class FeeFieldsSchema(BaseModel):
 class Trade(BaseModel):
     ticker: str
     trade_date: date
-    quantity: int
+    quantity: Decimal
     price: Decimal
     side: str = Field(pattern="^(BUY|SELL)$")
     market_type: str = Field(default="SWING")
@@ -37,7 +37,7 @@ class BrokerageNote(BaseModel):
 
 class Position(BaseModel):
     ticker: str
-    quantity: int
+    quantity: Decimal
     avg_price: Decimal
 
 
@@ -79,9 +79,11 @@ class TransactionOut(BaseModel):
     ticker: str
     trade_date: date
     side: str
-    quantity: int
+    quantity: Decimal
     price: Decimal
     market_type: str
+    source: str = "NOTA"
+    needs_review: bool = False
 
 
 class UploadOut(FeeFieldsSchema):
@@ -97,7 +99,7 @@ class ManualTransactionCreate(FeeFieldsSchema):
     ticker: str
     trade_date: date
     transaction_type: str = Field(pattern="^(BUY|SELL|GROUPING|SPLITTING|BONUS)$")
-    quantity: int | None = None  # Required for BUY/SELL/BONUS
+    quantity: Decimal | None = None  # Required for BUY/SELL/BONUS
     price: Decimal | None = None  # Required for BUY/SELL
     ratio_from: int | None = None  # Required for GROUPING/SPLITTING
     ratio_to: int | None = None  # Required for GROUPING/SPLITTING
@@ -126,7 +128,7 @@ class ManualTransactionOut(FeeFieldsSchema):
     ticker: str
     trade_date: date
     transaction_type: str
-    quantity: int | None
+    quantity: Decimal | None
     price: Decimal | None
     ratio_from: int | None
     ratio_to: int | None
@@ -138,7 +140,7 @@ class ClosedPositionTaxOut(BaseModel):
     asset_type: str         # "STOCK" | "BDR" | "FII"
     direction: str          # "LONG" | "SHORT"
     close_date: date
-    quantity: int
+    quantity: Decimal
     open_mean_price: Decimal
     close_price: Decimal
     realized_pnl: Decimal
@@ -169,6 +171,12 @@ class MonthlyTaxReport(BaseModel):
     amount_paid: Decimal | None = None   # None = not marked as paid
     payment_diverges: bool = False       # True if amount_paid != total_tax_due
     cached_at: datetime | None = None    # set when served from cache
+
+
+class TransactionPatch(BaseModel):
+    trade_date: date | None = None
+    price: Decimal | None = None
+    needs_review: bool | None = None
 
 
 class TaxPaymentOut(BaseModel):

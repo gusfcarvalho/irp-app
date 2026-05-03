@@ -118,7 +118,7 @@
                   {{ formatDate(pos.close_date) }}
                 </td>
                 <td class="px-4 py-3 text-right tabular-nums">
-                  {{ pos.quantity.toLocaleString('pt-BR') }}
+                  {{ formatQty(pos.quantity) }}
                 </td>
                 <td class="px-4 py-3 text-right tabular-nums">
                   <button
@@ -224,7 +224,7 @@
                       </td>
                     </template>
                     <template v-else>
-                      <td class="px-4 py-2 text-right tabular-nums">{{ step.quantity.toLocaleString('pt-BR') }}</td>
+                      <td class="px-4 py-2 text-right tabular-nums">{{ formatQty(step.quantity) }}</td>
                       <td class="px-4 py-2 text-right tabular-nums">{{ formatCurrency(step.raw_price) }}</td>
                       <td class="px-4 py-2 text-right tabular-nums" :class="Number(step.fee_per_unit) > 0 ? 'text-amber-600' : 'text-muted-foreground'">
                         {{ Number(step.fee_per_unit) > 0 ? (step.side === 'BUY' ? '+' : '−') : '' }}{{ formatCurrency(step.fee_per_unit) }}
@@ -240,7 +240,7 @@
                     <td colspan="8" class="px-4 py-1.5">
                       <div class="flex items-center gap-3 text-xs">
                         <span class="font-medium text-muted-foreground">Posição fechada —</span>
-                        <span class="text-muted-foreground">{{ step.closes_quantity.toLocaleString('pt-BR') }} ações</span>
+                        <span class="text-muted-foreground">{{ formatQty(step.closes_quantity) }} ações</span>
                         <span class="font-semibold" :class="Number(step.realized_pnl) >= 0 ? 'text-emerald-600' : 'text-red-500'">
                           {{ Number(step.realized_pnl) >= 0 ? '+' : '' }}{{ formatCurrency(step.realized_pnl) }}
                         </span>
@@ -278,7 +278,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { formatCurrency, formatDate } from '@/utils/format.js'
+import { formatCurrency, formatDate, formatQty } from '@/utils/format.js'
 import { getClosedPositions, getPositionBreakdown } from '@/services/api.js'
 import { AlertTriangle, Inbox as InboxIcon, Loader2, X } from 'lucide-vue-next'
 import Alert from '@/components/ui/Alert.vue'

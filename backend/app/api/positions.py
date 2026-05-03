@@ -28,11 +28,11 @@ class ClosedPositionOut(BaseModel):
 
 class PositionOut(BaseModel):
     ticker: str
-    computed_quantity: int
+    computed_quantity: Decimal
     computed_mean_price: Decimal
-    manual_quantity: int | None
+    manual_quantity: Decimal | None
     manual_mean_price: Decimal | None
-    effective_quantity: int
+    effective_quantity: Decimal
     effective_mean_price: Decimal
     is_overridden: bool
     asset_type: str
@@ -40,25 +40,25 @@ class PositionOut(BaseModel):
 
 class PositionPatch(BaseModel):
     manual_mean_price: Decimal | None = None
-    manual_quantity: int | None = None
+    manual_quantity: Decimal | None = None
 
 
 class TradeStepOut(BaseModel):
     trade_date: date
     side: str
-    quantity: int
+    quantity: Decimal
     raw_price: Decimal
     fee_per_unit: Decimal
     adjusted_price: Decimal
-    qty_after: int
+    qty_after: Decimal
     mean_price_after: Decimal
-    closes_quantity: int | None = None
+    closes_quantity: Decimal | None = None
     realized_pnl: Decimal | None = None
 
 
 def _to_out(pos: Position, computed: dict, overrides: dict | None = None) -> PositionOut:
     cp = computed.get(pos.ticker)
-    comp_qty = cp.quantity if cp else 0
+    comp_qty = cp.quantity if cp else Decimal(0)
     comp_mean = cp.mean_price if cp else Decimal(0)
     eff_qty = pos.manual_quantity if pos.manual_quantity is not None else comp_qty
     eff_mean = pos.manual_mean_price if pos.manual_mean_price is not None else comp_mean

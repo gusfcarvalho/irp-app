@@ -13,6 +13,13 @@ export const formatDatetime = (iso) => {
 export const formatCurrency = (v) =>
   Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+export const formatQty = (v) => {
+  const n = Number(v)
+  return Number.isInteger(n)
+    ? n.toLocaleString('pt-BR')
+    : n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })
+}
+
 export const pnlClass = (v) =>
   Number(v) > 0 ? 'text-emerald-600' : Number(v) < 0 ? 'text-red-500' : ''
 
@@ -26,6 +33,15 @@ export const assetTypeClass = (type) => {
     case 'ETF_RF':
     case 'RF_POS':
     case 'RF_PRE':     return 'text-slate-600 border-slate-200 bg-slate-50'
+    case 'TD':         return 'text-cyan-700 border-cyan-200 bg-cyan-50'
+    case 'CDB':
+    case 'LCI':
+    case 'LCA':
+    case 'LCF':
+    case 'LIG':        return 'text-teal-700 border-teal-200 bg-teal-50'
+    case 'CRI':
+    case 'CRA':        return 'text-amber-700 border-amber-200 bg-amber-50'
+    case 'DEB':        return 'text-rose-700 border-rose-200 bg-rose-50'
     default:           return ''
   }
 }

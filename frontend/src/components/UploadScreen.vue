@@ -1,11 +1,8 @@
 <template>
   <div class="space-y-6">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight">Importar Nota de Corretagem</h1>
-      <p class="text-muted-foreground text-sm mt-1">
-        Faça upload de um ou mais PDFs SINACOR (BTG, Clear, XP e outras) para importar suas transações.
-      </p>
-    </div>
+    <p class="text-muted-foreground text-sm">
+      Faça upload de um ou mais PDFs SINACOR (BTG, Clear, XP e outras) para importar suas transações.
+    </p>
 
     <Card class="p-6 space-y-4">
       <!-- Drop zone -->
@@ -206,7 +203,7 @@
                   {{ tx.side === 'BUY' ? 'Compra' : 'Venda' }}
                 </Badge>
               </td>
-              <td class="px-4 py-3 text-right tabular-nums">{{ tx.quantity.toLocaleString('pt-BR') }}</td>
+              <td class="px-4 py-3 text-right tabular-nums">{{ formatQty(tx.quantity) }}</td>
               <td class="px-4 py-3 text-right tabular-nums">{{ formatCurrency(tx.price) }}</td>
               <td class="px-4 py-3 text-right tabular-nums font-medium">
                 {{ formatCurrency(Number(tx.price) * tx.quantity) }}
@@ -221,7 +218,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { formatCurrency, formatDate } from '@/utils/format.js'
+import { formatCurrency, formatDate, formatQty } from '@/utils/format.js'
 import { getTransactions } from '@/services/api.js'
 import {
   AlertTriangle,

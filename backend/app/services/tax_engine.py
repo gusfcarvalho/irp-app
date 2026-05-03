@@ -38,9 +38,18 @@ _TAX_BUCKET: dict[str, str | None] = {
     AssetType.BDR:       "BDR",
     AssetType.ETF_RV:    "BDR",   # same rules as BDR
     AssetType.SUBSCRICAO: "BDR",  # same rules as BDR
-    AssetType.ETF_RF:    None,    # fixed-income ETF — tax due on source (no tax report here)
-    AssetType.RF_POS:    None,    # fixed-income products - tax due on source (no tax here)
-    AssetType.RF_PRE:    None,    # fixed-income products - tax due on source (no tax here)
+    AssetType.ETF_RF:    None,
+    AssetType.RF_POS:    None,
+    AssetType.RF_PRE:    None,
+    AssetType.CDB:       None,
+    AssetType.LCI:       None,
+    AssetType.LCA:       None,
+    AssetType.LCF:       None,
+    AssetType.LIG:       None,
+    AssetType.CRI:       None,
+    AssetType.CRA:       None,
+    AssetType.DEB:       None,
+    AssetType.TD:        None,
 }
 
 _ASSET_TYPES: tuple[str, ...] = ("STOCK", "BDR", "FII")

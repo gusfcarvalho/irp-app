@@ -72,10 +72,10 @@ class Upload(FeeFields, SQLModel, table=True):
 
 class Position(SQLModel, table=True):
     ticker: str = Field(primary_key=True)
-    quantity: int = Field(default=0)
+    quantity: Decimal = Field(default=Decimal(0))
     mean_price: Decimal = Field(default=Decimal(0))
     manual_mean_price: Decimal | None = Field(default=None)
-    manual_quantity: int | None = Field(default=None)
+    manual_quantity: Decimal | None = Field(default=None)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -85,9 +85,11 @@ class Transaction(SQLModel, table=True):
     ticker: str
     trade_date: date
     side: str
-    quantity: int
+    quantity: Decimal
     price: Decimal
     market_type: str = "SWING"
+    source: str = "NOTA"          # NOTA | B3_POSICAO | B3_MOVIMENTACAO
+    needs_review: bool = False    # True for B3 posição imports (price/date unconfirmed)
 
 
 class ManualTransaction(FeeFields, SQLModel, table=True):
@@ -96,7 +98,7 @@ class ManualTransaction(FeeFields, SQLModel, table=True):
     ticker: str = Field(index=True)
     trade_date: date
     transaction_type: str  # BUY, SELL, GROUPING, SPLITTING, BONUS
-    quantity: int | None = Field(default=None)  # For BUY/SELL/BONUS
+    quantity: Decimal | None = Field(default=None)  # For BUY/SELL/BONUS
     price: Decimal | None = Field(default=None)  # For BUY/SELL
     ratio_from: int | None = Field(default=None)  # For GROUPING/SPLITTING
     ratio_to: int | None = Field(default=None)  # For GROUPING/SPLITTING

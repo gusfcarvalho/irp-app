@@ -15,7 +15,7 @@ class PositionRepository:
     def get_by_ticker(self, ticker: str) -> Position | None:
         return self._s.get(Position, ticker)
 
-    def upsert_computed(self, ticker: str, quantity: int, mean_price) -> Position:
+    def upsert_computed(self, ticker: str, quantity, mean_price) -> Position:
         pos = self._s.get(Position, ticker) or Position(ticker=ticker)
         pos.quantity = quantity
         pos.mean_price = mean_price

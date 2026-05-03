@@ -114,7 +114,7 @@
                 {{ formatDate(pos.close_date) }}
               </td>
               <td class="px-4 py-2 text-right tabular-nums">
-                {{ pos.quantity.toLocaleString('pt-BR') }}
+                {{ formatQty(pos.quantity) }}
               </td>
               <td class="px-4 py-2 text-right tabular-nums">
                 <button
@@ -148,7 +148,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { formatCurrency, formatDate, pnlClass } from '@/utils/format.js'
+import { formatCurrency, formatDate, formatQty, pnlClass } from '@/utils/format.js'
 import Badge from '@/components/ui/Badge.vue'
 import Card from '@/components/ui/Card.vue'
 

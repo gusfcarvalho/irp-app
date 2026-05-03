@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from app.db import engine
 from app.models.db_models import Transaction, Upload
-from app.models.schemas import TransactionOut, UploadOut, UploadResponse
+from app.models.schemas import TransactionOut, TransactionPatch, UploadOut, UploadResponse
 from app.repositories.upload import UploadRepository
 from app.services.parsers.base import BrokerageParserPort
 from app.services.parsers.btg_adapter import BTGParserAdapter
@@ -87,6 +87,8 @@ async def upload_pdf(
                     quantity=trade.quantity,
                     price=trade.price,
                     market_type=trade.market_type,
+                    source="NOTA",
+                    needs_review=False,
                 )
             )
 
@@ -99,6 +101,47 @@ async def upload_pdf(
         transactions_created=len(result.trades),
         pending_aliases=ticker_svc.pending_aliases,
     )
+
+
+@router.patch("/transactions/{transaction_id}", response_model=TransactionOut)
+def patch_transaction(transaction_id: str, body: TransactionPatch) -> TransactionOut:
+    with Session(engine) as session:
+        tx = session.get(Transaction, transaction_id)
+        if tx is None:
+            raise HTTPException(status_code=404, detail=f"Transaction {transaction_id} not found")
+        if body.trade_date is not None:
+            tx.trade_date = body.trade_date
+        if body.price is not None:
+            tx.price = body.price
+        if body.needs_review is not None:
+            tx.needs_review = body.needs_review
+        session.add(tx)
+        session.commit()
+        session.refresh(tx)
+        return TransactionOut(
+            id=tx.id,
+            upload_id=tx.upload_id,
+            ticker=tx.ticker,
+            trade_date=tx.trade_date,
+            side=tx.side,
+            quantity=tx.quantity,
+            price=tx.price,
+            market_type=tx.market_type,
+            source=tx.source,
+            needs_review=tx.needs_review,
+        )
+
+
+@router.delete("/uploads/{upload_id}", status_code=204)
+def delete_upload(upload_id: str) -> None:
+    with Session(engine) as session:
+        upload = session.get(Upload, upload_id)
+        if upload is None:
+            raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
+        for tx in session.exec(select(Transaction).where(Transaction.upload_id == upload_id)).all():
+            session.delete(tx)
+        session.delete(upload)
+        session.commit()
 
 
 @router.get("/uploads", response_model=list[UploadOut])
@@ -160,6 +203,8 @@ def list_transactions() -> list[TransactionOut]:
             quantity=row.quantity,
             price=row.price,
             market_type=row.market_type,
+            source=getattr(row, "source", "NOTA"),
+            needs_review=getattr(row, "needs_review", False),
         )
         for row in rows
     ]

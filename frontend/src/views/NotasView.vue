@@ -43,39 +43,72 @@
         :key="nota.id"
         class="overflow-hidden"
       >
-        <button
-          class="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors text-left"
-          type="button"
-          @click="toggle(nota.id)"
-        >
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10">
-              <FileText class="h-4 w-4 text-primary" />
-            </div>
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="font-semibold text-sm truncate">{{ nota.filename }}</span>
-                <Badge v-if="nota.note_number" variant="secondary" class="font-mono text-xs">
-                  #{{ nota.note_number }}
-                </Badge>
-                <Badge variant="outline" class="text-xs">{{ nota.broker }}</Badge>
+        <div class="flex items-center">
+          <button
+            class="flex-1 flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors text-left"
+            type="button"
+            @click="toggle(nota.id)"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                <FileText class="h-4 w-4 text-primary" />
               </div>
-              <p class="text-xs text-muted-foreground mt-0.5">
-                {{ formatDatetime(nota.uploaded_at) }} &middot;
-                {{ nota.transactions.length }} transaç{{ nota.transactions.length === 1 ? 'ão' : 'ões' }}
-              </p>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-semibold text-sm truncate">{{ nota.filename }}</span>
+                  <Badge v-if="nota.note_number" variant="secondary" class="font-mono text-xs">
+                    #{{ nota.note_number }}
+                  </Badge>
+                  <Badge variant="outline" class="text-xs">{{ nota.broker }}</Badge>
+                </div>
+                <p class="text-xs text-muted-foreground mt-0.5">
+                  {{ formatDatetime(nota.uploaded_at) }} &middot;
+                  {{ nota.transactions.length }} transaç{{ nota.transactions.length === 1 ? 'ão' : 'ões' }}
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 shrink-0 ml-4">
+              <span class="text-sm font-semibold tabular-nums hidden sm:block">
+                {{ formatCurrency(totalValue(nota)) }}
+              </span>
+              <ChevronDown
+                class="h-4 w-4 text-muted-foreground transition-transform duration-200"
+                :class="expanded.has(nota.id) ? 'rotate-180' : ''"
+              />
+            </div>
+          </button>
+
+          <!-- Delete button: click once to arm, click again to confirm -->
+          <div class="px-3 shrink-0 border-l h-full flex items-center">
+            <button
+              v-if="confirmDelete !== nota.id"
+              type="button"
+              title="Excluir importação"
+              class="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+              @click.stop="confirmDelete = nota.id"
+            >
+              <Trash2 class="h-4 w-4" />
+            </button>
+            <div v-else class="flex items-center gap-1">
+              <button
+                type="button"
+                class="px-2 py-1 rounded text-xs font-medium text-destructive border border-destructive/40 hover:bg-destructive hover:text-white transition-colors"
+                :disabled="deleting === nota.id"
+                @click.stop="doDelete(nota.id)"
+              >
+                <Loader2 v-if="deleting === nota.id" class="h-3 w-3 animate-spin inline" />
+                <span v-else>Confirmar</span>
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground transition-colors"
+                @click.stop="confirmDelete = null"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
-          <div class="flex items-center gap-3 shrink-0 ml-4">
-            <span class="text-sm font-semibold tabular-nums hidden sm:block">
-              {{ formatCurrency(totalValue(nota)) }}
-            </span>
-            <ChevronDown
-              class="h-4 w-4 text-muted-foreground transition-transform duration-200"
-              :class="expanded.has(nota.id) ? 'rotate-180' : ''"
-            />
-          </div>
-        </button>
+        </div>
 
         <div v-if="expanded.has(nota.id)" class="border-t">
           <div v-if="totalFees(nota) > 0" class="px-5 py-3 bg-muted/20 border-b flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
@@ -121,7 +154,7 @@
                       {{ tx.side === 'BUY' ? 'Compra' : 'Venda' }}
                     </Badge>
                   </td>
-                  <td class="px-4 py-2.5 text-right tabular-nums">{{ tx.quantity.toLocaleString('pt-BR') }}</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums">{{ formatQty(tx.quantity) }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums">{{ formatCurrency(tx.price) }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-medium">
                     {{ formatCurrency(Number(tx.price) * tx.quantity) }}
@@ -138,8 +171,8 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { formatCurrency, formatDate, formatDatetime } from '@/utils/format.js'
-import { getUploads } from '@/services/api.js'
+import { formatCurrency, formatDate, formatDatetime, formatQty } from '@/utils/format.js'
+import { deleteUpload, getUploads } from '@/services/api.js'
 import { RouterLink } from 'vue-router'
 import {
   AlertTriangle,
@@ -147,6 +180,7 @@ import {
   FileText,
   Loader2,
   RefreshCw,
+  Trash2,
   Upload,
   Inbox as InboxIcon,
 } from 'lucide-vue-next'
@@ -159,6 +193,8 @@ const notas = ref([])
 const loading = ref(false)
 const error = ref('')
 const expanded = ref(new Set())
+const confirmDelete = ref(null)
+const deleting = ref(null)
 
 const toggle = (id) => {
   if (expanded.value.has(id)) {
@@ -167,6 +203,21 @@ const toggle = (id) => {
     expanded.value.add(id)
   }
   expanded.value = new Set(expanded.value)
+}
+
+const doDelete = async (id) => {
+  deleting.value = id
+  try {
+    await deleteUpload(id)
+    notas.value = notas.value.filter(n => n.id !== id)
+    expanded.value.delete(id)
+    expanded.value = new Set(expanded.value)
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    deleting.value = null
+    confirmDelete.value = null
+  }
 }
 
 
