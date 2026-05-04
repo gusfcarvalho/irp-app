@@ -17,8 +17,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.alter_column('quote', 'date', new_column_name='quote_date')
+    pass  # quote table was created with quote_date already; rename is a no-op
 
 
 def downgrade() -> None:
-    op.alter_column('quote', 'quote_date', new_column_name='date')
+    pass
