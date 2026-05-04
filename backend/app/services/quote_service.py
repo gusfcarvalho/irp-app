@@ -17,16 +17,18 @@ from app.models.db_models import Quote
 logger = logging.getLogger(__name__)
 
 
-def get_latest_quotes(session: Session, tickers: list[str]) -> list[Quote]:
-    """Return the most recent stored Quote row for each requested ticker."""
+def get_latest_quotes(session: Session, tickers: list[str], as_of=None) -> list[Quote]:
+    """Return the most recent stored Quote row for each ticker on or before as_of.
+
+    If as_of is None, returns the globally most recent quote per ticker.
+    """
     if not tickers:
         return []
     upper = [t.upper() for t in tickers]
-    rows = session.exec(
-        select(Quote)
-        .where(Quote.ticker.in_(upper))
-        .order_by(Quote.quote_date.desc())
-    ).all()
+    stmt = select(Quote).where(Quote.ticker.in_(upper))
+    if as_of is not None:
+        stmt = stmt.where(Quote.quote_date <= as_of)
+    rows = session.exec(stmt.order_by(Quote.quote_date.desc())).all()
     seen: set[str] = set()
     latest: list[Quote] = []
     for row in rows:

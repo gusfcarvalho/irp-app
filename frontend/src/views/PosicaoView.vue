@@ -166,8 +166,30 @@
                 <td class="px-4 py-3 text-right tabular-nums">
                   {{ formatCurrency(pos.effective_quantity * Number(pos.effective_mean_price)) }}
                 </td>
-                <td class="px-4 py-3 text-right tabular-nums" :class="quotesLoading ? 'text-muted-foreground/50' : ''">
-                  {{ quotesLoading ? '…' : quotes[pos.ticker] != null ? formatCurrency(quotes[pos.ticker]) : '—' }}
+                <td class="px-4 py-3 text-right tabular-nums group" :class="quotesLoading ? 'text-muted-foreground/50' : ''">
+                  <div v-if="editingQuoteTicker !== pos.ticker" class="flex items-center justify-end gap-1">
+                    <span>{{ quotesLoading ? '…' : quotes[pos.ticker] != null ? formatCurrency(quotes[pos.ticker]) : '—' }}</span>
+                    <button
+                      type="button"
+                      class="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+                      title="Editar cotação manualmente"
+                      @click="startEditQuote(pos.ticker)"
+                    >
+                      <Pencil class="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div v-else class="flex items-center justify-end gap-1">
+                    <input
+                      v-model="editingQuoteValue"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      class="w-24 h-6 text-xs rounded border border-primary px-1.5 text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+                      @keydown.enter="saveQuote(pos.ticker)"
+                      @keydown.escape="editingQuoteTicker = null"
+                      @blur="saveQuote(pos.ticker)"
+                    />
+                  </div>
                 </td>
                 <td
                   class="px-4 py-3 text-right tabular-nums font-semibold"
@@ -387,6 +409,7 @@ import {
   refreshQuotes,
   setTickerClassification,
   updatePositionOverride,
+  upsertQuote,
 } from '@/services/api.js'
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Inbox as InboxIcon, Loader2, Pencil, RotateCcw, X } from 'lucide-vue-next'
 import Alert from '@/components/ui/Alert.vue'
@@ -423,6 +446,33 @@ const quotesDate = computed(() => {
   if (!dates.length) return null
   return dates.sort().at(-1)  // most recent date across all tickers
 })
+const editingQuoteTicker = ref(null)
+const editingQuoteValue = ref('')
+
+const startEditQuote = (ticker) => {
+  editingQuoteTicker.value = ticker
+  editingQuoteValue.value = quotes.value[ticker] != null ? String(quotes.value[ticker]) : ''
+  // autofocus the input on next tick
+  setTimeout(() => {
+    const el = document.querySelector('input[type="number"][min="0"][step="0.01"]')
+    el?.focus()
+    el?.select()
+  }, 30)
+}
+
+const saveQuote = async (ticker) => {
+  if (editingQuoteTicker.value !== ticker) return
+  editingQuoteTicker.value = null
+  const val = parseFloat(editingQuoteValue.value)
+  if (!isFinite(val) || val < 0) return
+  try {
+    const q = await upsertQuote(ticker, asOf.value, val)
+    quotesMap.value = { ...quotesMap.value, [ticker]: { price: Number(q.close_price), date: q.date } }
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
 const editTarget = ref(null)
 const editQty = ref('')
 const editPrice = ref('')
@@ -582,7 +632,7 @@ const loadQuotes = async () => {
   if (!tickers.length) return
   quotesLoading.value = true
   try {
-    const rows = await getQuotes(tickers)
+    const rows = await getQuotes(tickers, asOf.value)
     quotesMap.value = buildQuotesMap(rows)
   } catch {
     // quotes are best-effort

@@ -20,7 +20,7 @@ class ClosedPositionOut(BaseModel):
     direction: str          # "LONG" | "SHORT"
     open_date: date | None
     close_date: date
-    quantity: int
+    quantity: Decimal
     open_mean_price: Decimal
     close_price: Decimal
     realized_pnl: Decimal

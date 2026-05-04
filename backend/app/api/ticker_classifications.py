@@ -8,7 +8,7 @@ from app.repositories.ticker import TickerClassificationRepository
 
 router = APIRouter(tags=["ticker-classifications"])
 
-VALID_TYPES = set(AssetType)
+VALID_TYPES = {a.value for a in AssetType}
 
 
 class ClassificationOut(BaseModel):

@@ -82,8 +82,13 @@ export const getPortfolioHistory = (mode = 'monthly') => request(`/portfolio-his
 
 // ── Quotes ───────────────────────────────────────────────────────────────────
 // Both return QuoteOut[]: [{ticker, date, close_price, fetched_at}, ...]
-export const getQuotes = (tickers) =>
-  request(`/quotes?${tickers.map(t => `tickers=${encodeURIComponent(t)}`).join('&')}`)
+export const getQuotes = (tickers, asOf = null) => {
+  const params = tickers.map(t => `tickers=${encodeURIComponent(t)}`).join('&')
+  const dateParam = asOf ? `&as_of=${asOf}` : ''
+  return request(`/quotes?${params}${dateParam}`)
+}
+export const upsertQuote = (ticker, quoteDate, closePrice) =>
+  request(`/quotes/${encodeURIComponent(ticker)}?quote_date=${quoteDate}`, json('PUT', { close_price: closePrice }))
 export const refreshQuotes = (tickers = [], full = false) => {
   const params = new URLSearchParams()
   if (full) params.set('full', 'true')
